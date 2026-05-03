@@ -1,18 +1,34 @@
-app = "smart-money-tracker"
-primary_region = "nrt"
+app = 'smart-money-tracker'
+primary_region = 'nrt'
 
 [build]
 
-[env]
-  NODE_ENV = "production"
-  LOG_LEVEL = "info"
-
-[[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
-
 [deploy]
-  strategy = "rolling"
+  strategy = 'rolling'
+
+[env]
+  LOG_LEVEL = 'info'
+  NODE_ENV = 'production'
+  PORT = '3000'
 
 [processes]
-  app = "node dist/index.js"
+  app = 'node dist/index.js'
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/health'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'

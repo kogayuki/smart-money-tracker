@@ -1,18 +1,15 @@
+# See https://fly.io/docs/app-guides/continuous-deployment-with-github-actions/
+
 name: Fly Deploy
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
-
-concurrency:
-  group: fly-deploy-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   deploy:
-    name: Deploy to Fly.io
+    name: Deploy app
     runs-on: ubuntu-latest
+    concurrency: deploy-group    # optional: ensure only one action runs at a time
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
