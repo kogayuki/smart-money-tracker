@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "defaultMinNotionalUsd": 50000,
+  "wallets": [
+    {
+      "address": "0x31ca8395cf837de08b24da3f660e77761dfb974b",
+      "label": "Probe Test (HFT/MM)",
+      "category": "market-maker",
+      "source": "test",
+      "active": false,
+      "minNotionalUsd": 100000,
+      "addedAt": "2026-05-04",
+      "notes": "Used in Phase 1-A probe. Disabled by default — too noisy (~88 fills/min). Re-enable only for high-threshold testing."
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000001",
+      "label": "Placeholder #1 (replace via B-3 Hyperdash scrape)",
+      "category": "smart-money",
+      "source": "manual",
+      "active": false,
+      "minNotionalUsd": 50000,
+      "addedAt": "2026-05-04",
+      "notes": "Placeholder. Replace with real top-trader address from Hyperdash leaderboard."
+    },
+    {
+      "address": "0x0000000000000000000000000000000000000002",
+      "label": "Placeholder #2 (replace via B-3 Hyperdash scrape)",
+      "category": "smart-money",
+      "source": "manual",
+      "active": false,
+      "minNotionalUsd": 50000,
+      "addedAt": "2026-05-04",
+      "notes": "Placeholder. Replace with real top-trader address from Hyperdash leaderboard."
+    }
+  ]
+}
