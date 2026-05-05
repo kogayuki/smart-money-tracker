@@ -1,0 +1,12 @@
+# Gitleaks: detect secrets before commit
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --config .gitleaks.toml
+  if [ $? -ne 0 ]; then
+    echo ""
+    echo "Gitleaks: シークレットが検出されました。コミットを中止します。"
+    echo "誤検知の場合は .gitleaks.toml の allowlist に追加してください。"
+    exit 1
+  fi
+else
+  echo "gitleaks がインストールされていません。brew install gitleaks で導入してください。"
+fi
