@@ -3,6 +3,56 @@
   "defaultMinNotionalUsd": 50000,
   "wallets": [
     {
+      "address": "0xa5b0edf6b55128e0ddae8e51ac538c3188401d41",
+      "label": "SM Alpha #1",
+      "category": "smart-money",
+      "source": "hyperdash-leaderboard",
+      "active": true,
+      "minNotionalUsd": 100000,
+      "addedAt": "2026-05-06",
+      "notes": "30d PnL +$27M, AV ~$42M. Dexly leaderboard top. Active ETH position."
+    },
+    {
+      "address": "0x6c8512516ce5669d35113a11ca8b8de322fd84f6",
+      "label": "SM Alpha #2",
+      "category": "smart-money",
+      "source": "hyperdash-leaderboard",
+      "active": true,
+      "minNotionalUsd": 100000,
+      "addedAt": "2026-05-06",
+      "notes": "30d PnL +$20M, AV ~$14M, volume $380M. High-frequency trader."
+    },
+    {
+      "address": "0xeadc152ac1014ace57c6b353f89adf5faffe9d55",
+      "label": "Multi-Asset Whale",
+      "category": "whale",
+      "source": "hyperdash-leaderboard",
+      "active": true,
+      "minNotionalUsd": 50000,
+      "addedAt": "2026-05-06",
+      "notes": "30d PnL +$13M, AV ~$17M. 38 open positions across BTC/ETH/ATOM/AVAX/LTC etc. Very diversified."
+    },
+    {
+      "address": "0xb83de012dba672c76a7dbbbf3e459cb59d7d6e36",
+      "label": "Abraxas Capital #1",
+      "category": "smart-money",
+      "source": "onchain-screen",
+      "active": true,
+      "minNotionalUsd": 50000,
+      "addedAt": "2026-05-06",
+      "notes": "Institutional (Abraxas Capital). AV ~$5M, 10 positions. BTC/ETH/SOL hedge shorts. Reported by Lookonchain."
+    },
+    {
+      "address": "0x5b5d51203a0f9079f8aeb098a6523a13f298c060",
+      "label": "Abraxas Capital #2",
+      "category": "smart-money",
+      "source": "onchain-screen",
+      "active": true,
+      "minNotionalUsd": 50000,
+      "addedAt": "2026-05-06",
+      "notes": "Institutional (Abraxas Capital). AV ~$5M, 8 positions. BTC/ETH/SOL/SUI/XRP. Reported by Lookonchain."
+    },
+    {
       "address": "0x31ca8395cf837de08b24da3f660e77761dfb974b",
       "label": "Probe Test (HFT/MM)",
       "category": "market-maker",
@@ -11,26 +61,6 @@
       "minNotionalUsd": 100000,
       "addedAt": "2026-05-04",
       "notes": "Used in Phase 1-A probe. Disabled by default — too noisy (~88 fills/min). Re-enable only for high-threshold testing."
-    },
-    {
-      "address": "0x0000000000000000000000000000000000000001",
-      "label": "Placeholder #1 (replace via B-3 Hyperdash scrape)",
-      "category": "smart-money",
-      "source": "manual",
-      "active": false,
-      "minNotionalUsd": 50000,
-      "addedAt": "2026-05-04",
-      "notes": "Placeholder. Replace with real top-trader address from Hyperdash leaderboard."
-    },
-    {
-      "address": "0x0000000000000000000000000000000000000002",
-      "label": "Placeholder #2 (replace via B-3 Hyperdash scrape)",
-      "category": "smart-money",
-      "source": "manual",
-      "active": false,
-      "minNotionalUsd": 50000,
-      "addedAt": "2026-05-04",
-      "notes": "Placeholder. Replace with real top-trader address from Hyperdash leaderboard."
     }
   ]
 }

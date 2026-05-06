@@ -1,27 +1,12 @@
 import { createServer } from "node:http";
-import { request } from "undici";
+import { notifyDiscord } from "./notify.js";
+import { loadWallets } from "./wallets/load.js";
+import { startMonitor } from "./monitor.js";
 
-const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 const NODE_ENV = process.env.NODE_ENV ?? "development";
 const PORT = Number(process.env.PORT ?? 3000);
 
 const startedAt = new Date();
-
-async function notifyDiscord(content: string): Promise<void> {
-  if (!DISCORD_WEBHOOK_URL) {
-    console.warn("[notify] DISCORD_WEBHOOK_URL not set, skipping");
-    return;
-  }
-  const res = await request(DISCORD_WEBHOOK_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ content }),
-  });
-  if (res.statusCode >= 300) {
-    const body = await res.body.text();
-    throw new Error(`Discord webhook ${res.statusCode}: ${body}`);
-  }
-}
 
 function startHealthServer(): void {
   const server = createServer((req, res) => {
@@ -46,20 +31,27 @@ function startHealthServer(): void {
 async function main(): Promise<void> {
   console.log(`[boot] smart-money-tracker started env=${NODE_ENV} at=${startedAt.toISOString()}`);
   startHealthServer();
-  await notifyDiscord(`Hello from Fly.io — smart-money-tracker booted at ${startedAt.toISOString()}`);
-  console.log("[boot] notify ok, entering heartbeat loop");
+  await notifyDiscord(`smart-money-tracker booted at ${startedAt.toISOString()}`);
+  console.log("[boot] notify ok");
+
+  // Load active wallets and start WebSocket monitor
+  const { wallets, defaultMinNotionalUsd } = await loadWallets({ onlyActive: true });
+  console.log(`[boot] loaded ${wallets.length} active wallet(s)`);
+
+  const cleanupMonitor = await startMonitor(wallets, { defaultMinNotionalUsd });
 
   const heartbeat = setInterval(() => {
     console.log(`[hb] alive ${new Date().toISOString()}`);
   }, 60_000);
 
-  const shutdown = (signal: string) => {
+  const shutdown = async (signal: string) => {
     console.log(`[shutdown] received ${signal}`);
     clearInterval(heartbeat);
+    await cleanupMonitor();
     process.exit(0);
   };
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
 }
 
 main().catch((err) => {
