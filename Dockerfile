@@ -12,6 +12,7 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json* ./
 RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=builder /app/dist ./dist
+COPY src/db/migrations ./dist/db/migrations
 COPY config ./config
 USER node
 CMD ["node", "dist/index.js"]
