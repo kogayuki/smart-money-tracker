@@ -2,6 +2,20 @@ import { createServer } from "node:http";
 import { notifyDiscord } from "./notify.js";
 import { loadWallets } from "./wallets/load.js";
 import { startMonitor } from "./monitor.js";
+import { EventBus } from "./events/bus.js";
+import { getDb } from "./db/client.js";
+import { runMigrations } from "./db/migrate.js";
+import { startFillRecorder } from "./recorder/fill-recorder.js";
+import { startFillNotifier } from "./listeners/fill-notifier.js";
+import { startSignalDetector } from "./signal/detector.js";
+import { startSignalRecorder } from "./signal/signal-recorder.js";
+import { startSignalNotifier } from "./signal/signal-notifier.js";
+import { startPriceCache } from "./signal/price-cache.js";
+import { startOutcomeChecker } from "./signal/outcome-checker.js";
+import { PolymarketPoller } from "./polymarket/poller.js";
+import { startInsightGenerator } from "./insight/generator.js";
+import { startInsightRecorder } from "./insight/insight-recorder.js";
+import { startInsightNotifier } from "./insight/insight-notifier.js";
 
 const NODE_ENV = process.env.NODE_ENV ?? "development";
 const PORT = Number(process.env.PORT ?? 3000);
@@ -34,11 +48,47 @@ async function main(): Promise<void> {
   await notifyDiscord(`smart-money-tracker booted at ${startedAt.toISOString()}`);
   console.log("[boot] notify ok");
 
-  // Load active wallets and start WebSocket monitor
+  // ── DB setup (optional — graceful if DATABASE_URL not set) ──
+  const sql = getDb();
+  if (sql) {
+    await runMigrations(sql);
+    console.log("[boot] migrations complete");
+  }
+
+  // ── EventBus ──
+  const bus = new EventBus();
+
+  // ── Listeners: fill events ──
+  startFillNotifier(bus);   // sm:fill → Discord (preserves existing behavior)
+  startFillRecorder(bus);   // sm:fill → DB
+
+  // ── Signal detection ──
+  const cleanupDetector = startSignalDetector(bus);
+  startSignalRecorder(bus);   // signal:detected → DB
+  startSignalNotifier(bus);   // signal:detected → Discord
+
+  // ── Price cache (for outcome checking + future use) ──
+  const cleanupPriceCache = await startPriceCache();
+
+  // ── Polymarket poller ──
+  const poller = new PolymarketPoller();
+  await poller.start();
+
+  // ── Insight generation ──
+  startInsightGenerator(bus, poller);
+  startInsightRecorder(bus);   // insight:generated → DB
+  startInsightNotifier(bus);   // insight:generated → Discord
+
+  // ── Outcome tracking ──
+  const cleanupOutcomeChecker = startOutcomeChecker();
+
+  // ── Load active wallets and start WebSocket monitor ──
   const { wallets, defaultMinNotionalUsd } = await loadWallets({ onlyActive: true });
   console.log(`[boot] loaded ${wallets.length} active wallet(s)`);
 
-  const cleanupMonitor = await startMonitor(wallets, { defaultMinNotionalUsd });
+  const cleanupMonitor = await startMonitor(wallets, { defaultMinNotionalUsd }, bus);
+
+  console.log("[boot] all systems online");
 
   const heartbeat = setInterval(() => {
     console.log(`[hb] alive ${new Date().toISOString()}`);
@@ -47,6 +97,10 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     console.log(`[shutdown] received ${signal}`);
     clearInterval(heartbeat);
+    cleanupDetector();
+    cleanupOutcomeChecker?.();
+    await poller.stop();
+    await cleanupPriceCache();
     await cleanupMonitor();
     process.exit(0);
   };

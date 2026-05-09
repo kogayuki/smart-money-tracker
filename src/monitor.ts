@@ -1,7 +1,7 @@
 import { WebSocketTransport, type ISubscription } from "@nktkas/hyperliquid";
 import { userFills } from "@nktkas/hyperliquid/api/subscription";
 import type { Wallet } from "./wallets/types.js";
-import { notifyDiscord, buildFillEmbed } from "./notify.js";
+import type { EventBus } from "./events/bus.js";
 
 export type MonitorConfig = {
   defaultMinNotionalUsd: number;
@@ -10,6 +10,7 @@ export type MonitorConfig = {
 export async function startMonitor(
   wallets: Wallet[],
   config: MonitorConfig,
+  bus: EventBus,
 ): Promise<() => Promise<void>> {
   if (wallets.length === 0) {
     console.warn("[monitor] no active wallets to monitor");
@@ -54,8 +55,25 @@ export async function startMonitor(
             `[monitor] alert ${wallet.label} ${fill.side === "B" ? "LONG" : "SHORT"} ${fill.coin} $${notional.toFixed(0)}`,
           );
 
-          notifyDiscord(buildFillEmbed(fill, wallet)).catch((err) => {
-            console.error("[monitor] notify error:", err);
+          bus.emit("sm:fill", {
+            coin: fill.coin,
+            px: fill.px,
+            sz: fill.sz,
+            side: fill.side,
+            hash: fill.hash as `0x${string}`,
+            time: fill.time,
+            startPosition: fill.startPosition,
+            closedPnl: fill.closedPnl,
+            fee: fill.fee,
+            crossed: fill.crossed,
+            oid: fill.oid,
+            tid: fill.tid,
+            dir: fill.dir,
+            feeToken: fill.feeToken,
+            walletAddress: wallet.address,
+            walletLabel: wallet.label,
+            walletCategory: wallet.category,
+            notionalUsd: notional,
           });
         }
       },
