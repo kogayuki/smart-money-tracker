@@ -4,15 +4,15 @@ import type { PatternMatcher, PatternMatch } from "./types.js";
 /**
  * New Entry pattern: A wallet opens a position in a coin it hasn't traded
  * recently. Indicates fresh conviction.
+ *
+ * Warmup: After startup, the first WARMUP_FILLS fills per wallet are used
+ * to seed history without firing signals. This prevents false positives
+ * from the empty in-memory state after a restart.
  */
 
 const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours lookback
 const COOLDOWN_MS = 60 * 60 * 1000; // 1 hour between signals for same wallet+coin
-
-type TradeRecord = {
-  coin: string;
-  lastSeenAt: number;
-};
+const WARMUP_FILLS = 3; // ignore first N fills per wallet after startup
 
 export class NewEntryPattern implements PatternMatcher {
   readonly name = "new_entry";
@@ -21,6 +21,8 @@ export class NewEntryPattern implements PatternMatcher {
   private walletHistory = new Map<string, Map<string, number>>();
   // Cooldown: wallet:coin → last signal timestamp
   private cooldowns = new Map<string, number>();
+  // Warmup: wallet → fill count seen since startup
+  private warmupCounts = new Map<string, number>();
 
   evaluate(fill: SmFillEvent): PatternMatch | null {
     const now = Date.now();
@@ -35,6 +37,14 @@ export class NewEntryPattern implements PatternMatcher {
     this.walletHistory.set(fill.walletAddress, walletCoins);
 
     if (!isNewEntry) return null;
+
+    // Warmup check: suppress signals during initial fill collection
+    const count = (this.warmupCounts.get(fill.walletAddress) ?? 0) + 1;
+    this.warmupCounts.set(fill.walletAddress, count);
+    if (count <= WARMUP_FILLS) {
+      console.log(`[new-entry] warmup ${fill.walletLabel} fill ${count}/${WARMUP_FILLS}, suppressing signal`);
+      return null;
+    }
 
     // Check cooldown
     const cooldownKey = `${fill.walletAddress}:${fill.coin}`;

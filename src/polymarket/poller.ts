@@ -3,11 +3,14 @@ import type { PolymarketMarket } from "./types.js";
 import { getDb } from "../db/client.js";
 
 const POLL_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
+const SNAPSHOT_RETENTION_DAYS = 7;
 
 export class PolymarketPoller {
   private cache = new Map<string, PolymarketMarket[]>(); // coin → markets
   private allMarkets = new Map<string, PolymarketMarket>(); // market id → market
   private interval: ReturnType<typeof setInterval> | null = null;
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   async start(): Promise<void> {
     // Fetch immediately on start
@@ -19,7 +22,25 @@ export class PolymarketPoller {
       });
     }, POLL_INTERVAL_MS);
 
-    console.log(`[pm-poller] started (interval: ${POLL_INTERVAL_MS / 60_000}min)`);
+    // Periodic snapshot cleanup
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupOldSnapshots().catch((err) => {
+        console.error("[pm-poller] cleanup error:", err);
+      });
+    }, CLEANUP_INTERVAL_MS);
+
+    console.log(`[pm-poller] started (interval: ${POLL_INTERVAL_MS / 60_000}min, retention: ${SNAPSHOT_RETENTION_DAYS}d)`);
+  }
+
+  private async cleanupOldSnapshots(): Promise<void> {
+    const sql = getDb();
+    if (!sql) return;
+
+    const result = await sql`
+      DELETE FROM pm_snapshots
+      WHERE fetched_at < now() - make_interval(days => ${SNAPSHOT_RETENTION_DAYS})
+    `;
+    console.log(`[pm-poller] cleaned up old snapshots (retention: ${SNAPSHOT_RETENTION_DAYS}d)`);
   }
 
   private async poll(): Promise<void> {
@@ -122,6 +143,10 @@ export class PolymarketPoller {
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
+    }
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
     }
     console.log("[pm-poller] stopped");
   }
