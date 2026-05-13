@@ -1,4 +1,4 @@
-FROM node:24-slim AS builder
+FROM node:26-slim AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --include=dev
@@ -6,7 +6,7 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-FROM node:24-slim AS runtime
+FROM node:26-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json* ./
