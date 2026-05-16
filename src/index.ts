@@ -1,7 +1,8 @@
 import { createServer } from "node:http";
 import { notifyDiscord } from "./notify.js";
 import { loadWallets } from "./wallets/load.js";
-import { startMonitor } from "./monitor.js";
+import { startHyperliquidMonitor } from "./exchanges/hyperliquid.js";
+import { startHelixMonitor } from "./exchanges/helix/monitor.js";
 import { EventBus } from "./events/bus.js";
 import { getDb } from "./db/client.js";
 import { runMigrations } from "./db/migrate.js";
@@ -16,6 +17,10 @@ import { PolymarketPoller } from "./polymarket/poller.js";
 import { startInsightGenerator } from "./insight/generator.js";
 import { startInsightRecorder } from "./insight/insight-recorder.js";
 import { startInsightNotifier } from "./insight/insight-notifier.js";
+import { startPaperEngine } from "./paper/engine.js";
+import { startPaperRecorder } from "./paper/recorder.js";
+import { startPaperNotifier } from "./paper/notifier.js";
+import { startPaperChecker } from "./paper/checker.js";
 
 const NODE_ENV = process.env.NODE_ENV ?? "development";
 const PORT = Number(process.env.PORT ?? 3000);
@@ -82,11 +87,24 @@ async function main(): Promise<void> {
   // ── Outcome tracking ──
   const cleanupOutcomeChecker = startOutcomeChecker();
 
-  // ── Load active wallets and start WebSocket monitor ──
+  // ── Paper trading ──
+  await startPaperEngine(bus);
+  startPaperRecorder(bus);
+  startPaperNotifier(bus);
+  const cleanupPaperChecker = startPaperChecker(bus);
+
+  // ── Load active wallets and start exchange monitors ──
   const { wallets, defaultMinNotionalUsd } = await loadWallets({ onlyActive: true });
   console.log(`[boot] loaded ${wallets.length} active wallet(s)`);
 
-  const cleanupMonitor = await startMonitor(wallets, { defaultMinNotionalUsd }, bus);
+  const hlWallets = wallets.filter((w) => w.exchange === "hyperliquid");
+  const helixWallets = wallets.filter((w) => w.exchange === "helix");
+
+  console.log(`[boot] Hyperliquid: ${hlWallets.length}, Helix: ${helixWallets.length}`);
+
+  const monitorConfig = { defaultMinNotionalUsd };
+  const cleanupHl = await startHyperliquidMonitor(hlWallets, monitorConfig, bus);
+  const cleanupHelix = await startHelixMonitor(helixWallets, monitorConfig, bus);
 
   console.log("[boot] all systems online");
 
@@ -99,9 +117,11 @@ async function main(): Promise<void> {
     clearInterval(heartbeat);
     cleanupDetector();
     cleanupOutcomeChecker?.();
+    cleanupPaperChecker();
     await poller.stop();
     await cleanupPriceCache();
-    await cleanupMonitor();
+    await cleanupHl();
+    await cleanupHelix();
     process.exit(0);
   };
   process.on("SIGTERM", () => void shutdown("SIGTERM"));

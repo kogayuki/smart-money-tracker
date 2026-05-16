@@ -64,7 +64,7 @@ export class NewEntryPattern implements PatternMatcher {
       coin: fill.coin,
       direction,
       confidence: Math.round(confidence * 1000) / 1000,
-      triggerFillIds: [fill.tid],
+      triggerFillIds: fill.tid !== undefined ? [fill.tid] : [],
       walletLabels: [fill.walletLabel],
       priceAtSignal: parseFloat(fill.px),
       metadata: {

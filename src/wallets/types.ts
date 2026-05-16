@@ -1,5 +1,7 @@
 import * as v from "valibot";
 
+export const WalletExchange = v.picklist(["hyperliquid", "helix"]);
+
 export const WalletCategory = v.picklist([
   "smart-money",
   "whale",
@@ -11,17 +13,15 @@ export const WalletCategory = v.picklist([
 export const WalletSource = v.picklist([
   "manual",
   "hyperdash-leaderboard",
+  "helix-leaderboard",
   "onchain-screen",
   "community-tip",
   "test",
 ]);
 
 export const Wallet = v.object({
-  address: v.pipe(
-    v.string(),
-    v.regex(/^0x[a-fA-F0-9]{40}$/, "must be a valid 0x address"),
-    v.transform((s) => s.toLowerCase() as `0x${string}`),
-  ),
+  address: v.string(),
+  exchange: WalletExchange,
   label: v.pipe(v.string(), v.minLength(1)),
   category: WalletCategory,
   source: WalletSource,

@@ -5,6 +5,7 @@ export function startFillNotifier(bus: EventBus): void {
   bus.on("sm:fill", (fill: SmFillEvent) => {
     const wallet = {
       address: fill.walletAddress,
+      exchange: fill.exchange,
       label: fill.walletLabel,
       category: fill.walletCategory as "smart-money" | "whale" | "market-maker" | "vault" | "watchlist",
       source: "manual" as const,

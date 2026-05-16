@@ -2,25 +2,35 @@ import { EventEmitter } from "node:events";
 
 // ── Event payload types ──
 
+export type Exchange = "hyperliquid" | "helix";
+
 export type SmFillEvent = {
+  // Common fields (all exchanges)
+  exchange: Exchange;
   coin: string;
   px: string;
   sz: string;
   side: "B" | "A";
-  hash: `0x${string}`;
   time: number;
-  startPosition: string;
-  closedPnl: string;
-  fee: string;
-  crossed: boolean;
-  oid: number;
-  tid: number;
-  dir: string;
-  feeToken: string;
-  walletAddress: `0x${string}`;
+  walletAddress: string;
   walletLabel: string;
   walletCategory: string;
   notionalUsd: number;
+
+  // Hyperliquid-specific (optional)
+  hash?: `0x${string}`;
+  startPosition?: string;
+  closedPnl?: string;
+  fee?: string;
+  crossed?: boolean;
+  oid?: number;
+  tid?: number;
+  dir?: string;
+  feeToken?: string;
+
+  // Helix-specific (optional)
+  txHash?: string;
+  tradeId?: string;
 };
 
 export type SignalDetectedEvent = {
@@ -51,12 +61,48 @@ export type InsightGeneratedEvent = {
   generatedAt: Date;
 };
 
+export type PaperTradeOpenEvent = {
+  id: string;
+  signalId: string;
+  coin: string;
+  direction: "long" | "short";
+  entryPrice: number;
+  positionSizeUsd: number;
+  quantity: number;
+  tpPrice: number;
+  slPrice: number;
+  maxCloseAt: Date;
+  signalType: string;
+  signalConfidence: number;
+  openedAt: Date;
+};
+
+export type PaperTradeCloseEvent = {
+  id: string;
+  signalId: string;
+  coin: string;
+  direction: "long" | "short";
+  entryPrice: number;
+  exitPrice: number;
+  positionSizeUsd: number;
+  quantity: number;
+  pnlUsd: number;
+  pnlPct: number;
+  status: "closed_tp" | "closed_sl" | "closed_timeout";
+  signalType: string;
+  signalConfidence: number;
+  openedAt: Date;
+  closedAt: Date;
+};
+
 // ── Event map ──
 
 export type EventMap = {
   "sm:fill": SmFillEvent;
   "signal:detected": SignalDetectedEvent;
   "insight:generated": InsightGeneratedEvent;
+  "paper:open": PaperTradeOpenEvent;
+  "paper:close": PaperTradeCloseEvent;
 };
 
 // ── Typed EventBus ──

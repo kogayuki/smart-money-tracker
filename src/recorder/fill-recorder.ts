@@ -14,35 +14,40 @@ export function startFillRecorder(bus: EventBus): void {
   }
 
   bus.on("sm:fill", (fill: SmFillEvent) => {
+    // Use hash (HL) or txHash+tradeId (Helix) as unique key
+    const uniqueHash = fill.hash ?? `${fill.txHash}:${fill.tradeId}`;
+
     sql`
       INSERT INTO sm_fills (
         coin, side, px, sz, notional_usd, time_ms, hash,
         oid, tid, crossed, fee, fee_token,
         start_position, closed_pnl, dir,
-        wallet_address, wallet_label, wallet_category
+        wallet_address, wallet_label, wallet_category,
+        exchange, tx_hash
       ) VALUES (
         ${fill.coin}, ${fill.side}, ${fill.px}, ${fill.sz},
-        ${fill.notionalUsd}, ${fill.time}, ${fill.hash},
-        ${fill.oid}, ${fill.tid}, ${fill.crossed},
-        ${toNumericOrNull(fill.fee)}, ${fill.feeToken},
+        ${fill.notionalUsd}, ${fill.time}, ${uniqueHash},
+        ${fill.oid ?? null}, ${fill.tid ?? null}, ${fill.crossed ?? false},
+        ${toNumericOrNull(fill.fee)}, ${fill.feeToken ?? null},
         ${toNumericOrNull(fill.startPosition)}, ${toNumericOrNull(fill.closedPnl)}, ${fill.dir || null},
-        ${fill.walletAddress}, ${fill.walletLabel}, ${fill.walletCategory}
+        ${fill.walletAddress}, ${fill.walletLabel}, ${fill.walletCategory},
+        ${fill.exchange}, ${fill.txHash ?? null}
       )
       ON CONFLICT (hash) DO NOTHING
       RETURNING id
     `
       .then((res) => {
         if (res.length === 0) {
-          console.log(`[fill-recorder] duplicate hash=${fill.hash}`);
+          console.log(`[fill-recorder] duplicate hash=${uniqueHash}`);
         } else {
-          console.log(`[fill-recorder] saved id=${res[0]?.id} ${fill.walletLabel} ${fill.side === "B" ? "LONG" : "SHORT"} ${fill.coin} $${Math.round(fill.notionalUsd).toLocaleString()}`);
+          console.log(`[fill-recorder] saved id=${res[0]?.id} [${fill.exchange}] ${fill.walletLabel} ${fill.side === "B" ? "LONG" : "SHORT"} ${fill.coin} $${Math.round(fill.notionalUsd).toLocaleString()}`);
         }
       })
       .catch((err) => {
         console.error(
           `[fill-recorder] insert error for ${fill.walletLabel} ${fill.coin}:`,
           err instanceof Error ? err.message : err,
-          { hash: fill.hash, px: fill.px, sz: fill.sz, fee: fill.fee, startPosition: fill.startPosition, closedPnl: fill.closedPnl },
+          { hash: uniqueHash, px: fill.px, sz: fill.sz, fee: fill.fee, startPosition: fill.startPosition, closedPnl: fill.closedPnl },
         );
       });
   });

@@ -4,6 +4,7 @@
   "wallets": [
     {
       "address": "0xa5b0edf6b55128e0ddae8e51ac538c3188401d41",
+      "exchange": "hyperliquid",
       "label": "SM Alpha #1",
       "category": "smart-money",
       "source": "hyperdash-leaderboard",
@@ -14,6 +15,7 @@
     },
     {
       "address": "0x6c8512516ce5669d35113a11ca8b8de322fd84f6",
+      "exchange": "hyperliquid",
       "label": "SM Alpha #2",
       "category": "smart-money",
       "source": "hyperdash-leaderboard",
@@ -24,6 +26,7 @@
     },
     {
       "address": "0xeadc152ac1014ace57c6b353f89adf5faffe9d55",
+      "exchange": "hyperliquid",
       "label": "Multi-Asset Whale",
       "category": "whale",
       "source": "hyperdash-leaderboard",
@@ -34,6 +37,7 @@
     },
     {
       "address": "0xb83de012dba672c76a7dbbbf3e459cb59d7d6e36",
+      "exchange": "hyperliquid",
       "label": "Abraxas Capital #1",
       "category": "smart-money",
       "source": "onchain-screen",
@@ -44,6 +48,7 @@
     },
     {
       "address": "0x5b5d51203a0f9079f8aeb098a6523a13f298c060",
+      "exchange": "hyperliquid",
       "label": "Abraxas Capital #2",
       "category": "smart-money",
       "source": "onchain-screen",
@@ -54,6 +59,7 @@
     },
     {
       "address": "0x31ca8395cf837de08b24da3f660e77761dfb974b",
+      "exchange": "hyperliquid",
       "label": "Probe Test (HFT/MM)",
       "category": "market-maker",
       "source": "test",
@@ -61,6 +67,50 @@
       "minNotionalUsd": 100000,
       "addedAt": "2026-05-04",
       "notes": "Used in Phase 1-A probe. Disabled by default — too noisy (~88 fills/min). Re-enable only for high-threshold testing."
+    },
+    {
+      "address": "inj1pwk8j5c85hu2tgr608fntdq6u5eqk0cqvwajuu",
+      "exchange": "helix",
+      "label": "Helix Whale #1 (Inactive)",
+      "category": "whale",
+      "source": "onchain-screen",
+      "active": false,
+      "minNotionalUsd": 10000,
+      "addedAt": "2026-05-13",
+      "notes": "Last trade 2024-11. Stale INJ/USDT short. Disabled 2026-05-16."
+    },
+    {
+      "address": "inj1tlatz9jq7s34y6zurg67zfgqajvrjg9wsprqyu",
+      "exchange": "helix",
+      "label": "Helix SM #1",
+      "category": "smart-money",
+      "source": "onchain-screen",
+      "active": true,
+      "minNotionalUsd": 5000,
+      "addedAt": "2026-05-13",
+      "notes": "Active daily trader. 3 positions across BTC/ETH/INJ PERP. Trades every ~30min. Verified 2026-05-16."
+    },
+    {
+      "address": "inj1w587jqdxpygatpl8jt6j74g8hh36tw5vmecuek",
+      "exchange": "helix",
+      "label": "Helix SM #2",
+      "category": "smart-money",
+      "source": "onchain-screen",
+      "active": true,
+      "minNotionalUsd": 5000,
+      "addedAt": "2026-05-13",
+      "notes": "Most active Helix trader. 16 positions across 12+ markets (BTC/ETH/XRP/INJ/ZRO/BERA/TRUMP/etc). Verified 2026-05-16."
+    },
+    {
+      "address": "inj12vpajtjf5cvmk2w737m0t8qwwkyjz0xgvxwyus",
+      "exchange": "helix",
+      "label": "Helix SM #3 (Inactive)",
+      "category": "smart-money",
+      "source": "onchain-screen",
+      "active": false,
+      "minNotionalUsd": 5000,
+      "addedAt": "2026-05-13",
+      "notes": "Last trade 2023-10. Zero positions. Disabled 2026-05-16."
     }
   ]
 }

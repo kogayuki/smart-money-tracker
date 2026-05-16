@@ -1,17 +1,20 @@
 import { WebSocketTransport } from "@nktkas/hyperliquid";
 import { allMids } from "@nktkas/hyperliquid/api/subscription";
+import { IndexerGrpcDerivativesApi } from "@injectivelabs/sdk-ts";
+import { getNetworkEndpoints, Network } from "@injectivelabs/networks";
 
 /**
- * Subscribes to Hyperliquid allMids WebSocket feed and keeps an in-memory
- * map of latest mid prices for all coins.
+ * Maintains an in-memory map of latest mid prices for all coins,
+ * combining Hyperliquid allMids (WebSocket) and Helix derivative
+ * orderbook mid prices (REST polling every 30s).
  */
 
-// coin → mid price
+// coin → mid price (shared across both exchanges)
 const prices = new Map<string, number>();
 
-let cleanup: (() => Promise<void>) | null = null;
+// ── Hyperliquid allMids (WebSocket) ──
 
-export async function startPriceCache(): Promise<() => Promise<void>> {
+async function startHyperliquidPrices(): Promise<() => Promise<void>> {
   const transport = new WebSocketTransport();
 
   const sub = await allMids({ transport }, (data) => {
@@ -21,18 +24,111 @@ export async function startPriceCache(): Promise<() => Promise<void>> {
   });
 
   sub.failureSignal.addEventListener("abort", () => {
-    console.error(`[price-cache] subscription failed: ${sub.failureSignal.reason}`);
+    console.error(`[price-cache] HL subscription failed: ${sub.failureSignal.reason}`);
   });
 
-  console.log("[price-cache] subscribed to allMids");
+  console.log("[price-cache] subscribed to Hyperliquid allMids");
 
-  cleanup = async () => {
+  return async () => {
     await sub.unsubscribe();
     await transport.close();
-    console.log("[price-cache] stopped");
+  };
+}
+
+// ── Helix derivative mid prices (REST polling) ──
+
+const HELIX_POLL_INTERVAL_MS = 30_000; // 30 seconds
+
+async function startHelixPrices(): Promise<() => void> {
+  const endpoints = getNetworkEndpoints(Network.Mainnet);
+  const indexerEndpoint = process.env.INJECTIVE_INDEXER_URL ?? endpoints.indexer;
+  const api = new IndexerGrpcDerivativesApi(indexerEndpoint);
+
+  // marketId → coin symbol cache
+  let marketCoinMap = new Map<string, string>();
+
+  const refreshMarkets = async () => {
+    try {
+      const markets = await api.fetchMarkets();
+      const map = new Map<string, string>();
+      for (const m of markets) {
+        const coin = m.ticker.split("/")[0]?.trim();
+        if (coin) map.set(m.marketId, coin);
+      }
+      marketCoinMap = map;
+    } catch (err) {
+      console.error(
+        "[price-cache] Helix market refresh failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
   };
 
-  return cleanup;
+  const fetchPrices = async () => {
+    try {
+      if (marketCoinMap.size === 0) await refreshMarkets();
+
+      const marketIds = [...marketCoinMap.keys()];
+      if (marketIds.length === 0) return;
+
+      const orderbooks = await api.fetchOrderbooksV2(marketIds);
+
+      for (const { marketId, orderbook } of orderbooks) {
+        const coin = marketCoinMap.get(marketId);
+        if (!coin) continue;
+
+        const bestBid = orderbook.buys[0];
+        const bestAsk = orderbook.sells[0];
+        if (!bestBid || !bestAsk) continue;
+
+        const mid = (parseFloat(bestBid.price) + parseFloat(bestAsk.price)) / 2;
+        if (mid > 0) {
+          // Only set if Hyperliquid doesn't already have this coin
+          // (HL data is more real-time via WebSocket)
+          if (!prices.has(coin)) {
+            prices.set(coin, mid);
+          }
+        }
+      }
+
+      console.log(`[price-cache] Helix prices updated (${orderbooks.length} markets)`);
+    } catch (err) {
+      console.error(
+        "[price-cache] Helix price fetch failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  };
+
+  // Initial load
+  await refreshMarkets();
+  await fetchPrices();
+
+  // Periodic refresh: prices every 30s, markets every 10min
+  const priceInterval = setInterval(() => void fetchPrices(), HELIX_POLL_INTERVAL_MS);
+  const marketInterval = setInterval(() => void refreshMarkets(), 10 * 60 * 1000);
+
+  console.log("[price-cache] Helix price polling started (30s interval)");
+
+  return () => {
+    clearInterval(priceInterval);
+    clearInterval(marketInterval);
+  };
+}
+
+// ── Combined price cache ──
+
+export async function startPriceCache(): Promise<() => Promise<void>> {
+  const cleanupHl = await startHyperliquidPrices();
+  const cleanupHelix = await startHelixPrices();
+
+  console.log("[price-cache] all price sources active");
+
+  return async () => {
+    cleanupHelix();
+    await cleanupHl();
+    console.log("[price-cache] stopped");
+  };
 }
 
 export function getPrice(coin: string): number | null {

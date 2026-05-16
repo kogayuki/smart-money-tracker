@@ -12,6 +12,11 @@ export type LoadOptions = {
   onlyActive?: boolean;
 };
 
+const ADDRESS_PATTERNS: Record<string, RegExp> = {
+  hyperliquid: /^0x[a-fA-F0-9]{40}$/,
+  helix: /^inj1[a-z0-9]{38}$/,
+};
+
 export async function loadWallets(opts: LoadOptions = {}): Promise<{
   wallets: Wallet[];
   defaultMinNotionalUsd: number;
@@ -28,6 +33,14 @@ export async function loadWallets(opts: LoadOptions = {}): Promise<{
       throw new Error(`duplicate wallet address: ${w.address}`);
     }
     seen.add(w.address);
+
+    // Per-exchange address format validation
+    const pattern = ADDRESS_PATTERNS[w.exchange];
+    if (pattern && !pattern.test(w.address)) {
+      throw new Error(
+        `invalid ${w.exchange} address for wallet "${w.label}": ${w.address}`,
+      );
+    }
   }
   return {
     wallets,

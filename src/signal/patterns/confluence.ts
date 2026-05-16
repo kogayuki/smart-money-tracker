@@ -56,7 +56,7 @@ export class ConfluencePattern implements PatternMatcher {
       coin: fill.coin,
       direction,
       confidence: Math.round(confidence * 1000) / 1000,
-      triggerFillIds: active.map((e) => e.fill.tid),
+      triggerFillIds: active.map((e) => e.fill.tid).filter((id): id is number => id !== undefined),
       walletLabels: [...new Set(active.map((e) => e.fill.walletLabel))],
       priceAtSignal: parseFloat(fill.px),
       metadata: {
