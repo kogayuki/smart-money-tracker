@@ -5,6 +5,14 @@ import { neon } from "@neondatabase/serverless";
  * Usage: npx tsx src/scripts/paper-report.ts
  */
 
+const DIR_JA: Record<string, string> = { long: "ロング", short: "ショート" };
+const STATUS_JA: Record<string, string> = {
+  open: "オープン",
+  closed_tp: "利確",
+  closed_sl: "損切",
+  closed_timeout: "タイムアウト",
+};
+
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
   if (!url) {
@@ -14,7 +22,9 @@ async function main(): Promise<void> {
 
   const sql = neon(url);
 
-  console.log("=== Paper Trade Performance Report ===\n");
+  console.log("╔══════════════════════════════════════════╗");
+  console.log("║   ペーパートレード パフォーマンスレポート   ║");
+  console.log("╚══════════════════════════════════════════╝\n");
 
   // ── Overall stats ──
   const overall = await sql`
@@ -35,16 +45,16 @@ async function main(): Promise<void> {
   const o = overall[0]!;
   const closedCount = Number(o.closed);
   const winCount = Number(o.wins);
-  const winRate = closedCount > 0 ? ((winCount / closedCount) * 100).toFixed(1) : "N/A";
+  const winRate = closedCount > 0 ? ((winCount / closedCount) * 100).toFixed(1) : "-";
 
-  console.log("--- Overall ---");
-  console.log(`  Total trades:   ${o.total} (open: ${o.open}, closed: ${o.closed})`);
-  console.log(`  Win/Loss/TO:    ${o.wins}W / ${o.losses}L / ${o.timeouts}TO`);
-  console.log(`  Win rate:       ${winRate}%`);
-  console.log(`  Total P&L:      $${Number(o.total_pnl_usd).toFixed(2)}`);
-  console.log(`  Avg P&L:        ${o.avg_pnl_pct}%`);
-  console.log(`  Best trade:     ${o.best_pct}%`);
-  console.log(`  Worst trade:    ${o.worst_pct}%`);
+  console.log("── 全体サマリー ──");
+  console.log(`  トレード数:     ${o.total} (オープン: ${o.open} / 決済済: ${o.closed})`);
+  console.log(`  勝敗:           ${o.wins}勝 / ${o.losses}敗 / ${o.timeouts}タイムアウト`);
+  console.log(`  勝率:           ${winRate}%`);
+  console.log(`  累計損益:       $${Number(o.total_pnl_usd).toFixed(2)}`);
+  console.log(`  平均損益:       ${o.avg_pnl_pct}%`);
+  console.log(`  最高収益:       ${o.best_pct}%`);
+  console.log(`  最大損失:       ${o.worst_pct}%`);
 
   console.log("");
 
@@ -65,17 +75,17 @@ async function main(): Promise<void> {
   `;
 
   if (byCoin.length > 0) {
-    console.log("--- By Coin ---");
-    console.log("Coin | Total | Open | W/L/TO      | Win Rate | Total P&L  | Avg P&L");
-    console.log("-----|-------|------|-------------|----------|------------|--------");
+    console.log("── コイン別成績 ──");
+    console.log("コイン | 合計 | 未決済 | 勝/敗/TO    | 勝率     | 累計損益   | 平均損益");
+    console.log("-------|------|--------|-------------|----------|-----------|--------");
     for (const row of byCoin) {
       const closed = Number(row.total) - Number(row.open);
-      const wr = closed > 0 ? `${((Number(row.wins) / closed) * 100).toFixed(0)}%` : "N/A";
-      const coin = String(row.coin).padEnd(4);
-      const total = String(row.total).padEnd(5);
-      const open = String(row.open).padEnd(4);
-      const wlt = `${row.wins}W/${row.losses}L/${row.timeouts}TO`.padEnd(11);
-      const pnl = `$${Number(row.total_pnl_usd).toFixed(2)}`.padEnd(10);
+      const wr = closed > 0 ? `${((Number(row.wins) / closed) * 100).toFixed(0)}%` : "-";
+      const coin = String(row.coin).padEnd(5);
+      const total = String(row.total).padEnd(4);
+      const open = String(row.open).padEnd(6);
+      const wlt = `${row.wins}勝/${row.losses}敗/${row.timeouts}TO`.padEnd(11);
+      const pnl = `$${Number(row.total_pnl_usd).toFixed(2)}`.padEnd(9);
       const avg = `${row.avg_pnl_pct}%`;
       console.log(`${coin} | ${total} | ${open} | ${wlt} | ${wr.padEnd(8)} | ${pnl} | ${avg}`);
     }
@@ -100,14 +110,14 @@ async function main(): Promise<void> {
   `;
 
   if (bySignal.length > 0) {
-    console.log("--- By Signal Type ---");
-    console.log("Signal Type  | Total | W/L/TO      | Total P&L  | Avg P&L | Avg Conf");
-    console.log("-------------|-------|-------------|------------|---------|----------");
+    console.log("── シグナル種別 ──");
+    console.log("シグナル     | 合計 | 勝/敗/TO    | 累計損益   | 平均損益 | 平均確信度");
+    console.log("-------------|------|-------------|-----------|---------|----------");
     for (const row of bySignal) {
       const type = String(row.signal_type).padEnd(12);
-      const total = String(row.total).padEnd(5);
-      const wlt = `${row.wins}W/${row.losses}L/${row.timeouts}TO`.padEnd(11);
-      const pnl = `$${Number(row.total_pnl_usd).toFixed(2)}`.padEnd(10);
+      const total = String(row.total).padEnd(4);
+      const wlt = `${row.wins}勝/${row.losses}敗/${row.timeouts}TO`.padEnd(11);
+      const pnl = `$${Number(row.total_pnl_usd).toFixed(2)}`.padEnd(9);
       const avg = `${row.avg_pnl_pct}%`.padEnd(7);
       const conf = `${(Number(row.avg_confidence) * 100).toFixed(0)}%`;
       console.log(`${type} | ${total} | ${wlt} | ${pnl} | ${avg} | ${conf}`);
@@ -126,33 +136,39 @@ async function main(): Promise<void> {
   `;
 
   if (recent.length > 0) {
-    console.log("--- Recent Trades (last 10) ---");
+    console.log("── 直近トレード (最大10件) ──");
     for (const t of recent) {
-      const ts = new Date(t.opened_at as string).toISOString().slice(0, 16);
-      const dir = t.direction === "long" ? "LONG " : "SHORT";
-      const status = String(t.status).replace("closed_", "");
+      const ts = new Date(t.opened_at as string).toLocaleString("ja-JP", {
+        timeZone: "Asia/Tokyo",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const dir = DIR_JA[t.direction as string] ?? t.direction;
+      const status = STATUS_JA[t.status as string] ?? t.status;
 
       let pnlStr = "";
       if (t.status !== "open") {
         const sign = Number(t.pnl_usd) >= 0 ? "+" : "";
         pnlStr = `${sign}$${Number(t.pnl_usd).toFixed(2)} (${sign}${Number(t.pnl_pct).toFixed(2)}%)`;
       } else {
-        pnlStr = "(open)";
+        pnlStr = "-";
       }
 
       console.log(
         `  ${ts} | ${t.coin} ${dir} | ${t.signal_type} | ` +
-        `entry=$${Number(t.entry_price).toFixed(2)} | ${status} | ${pnlStr}`,
+        `$${Number(t.entry_price).toFixed(2)} | ${status} | ${pnlStr}`,
       );
     }
   } else {
-    console.log("No paper trades recorded yet.");
+    console.log("まだトレード記録がありません。");
   }
 
-  console.log("\n=== End of Report ===");
+  console.log("\n══ レポート終了 ══");
 }
 
 main().catch((err) => {
-  console.error("Report error:", err);
+  console.error("レポートエラー:", err);
   process.exit(1);
 });
