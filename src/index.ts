@@ -21,6 +21,7 @@ import { startPaperEngine } from "./paper/engine.js";
 import { startPaperRecorder } from "./paper/recorder.js";
 import { startPaperNotifier } from "./paper/notifier.js";
 import { startPaperChecker } from "./paper/checker.js";
+import { startDailyReport } from "./paper/daily-report.js";
 
 const NODE_ENV = process.env.NODE_ENV ?? "development";
 const PORT = Number(process.env.PORT ?? 3000);
@@ -92,6 +93,7 @@ async function main(): Promise<void> {
   startPaperRecorder(bus);
   startPaperNotifier(bus);
   const cleanupPaperChecker = startPaperChecker(bus);
+  const cleanupDailyReport = startDailyReport();
 
   // ── Load active wallets and start exchange monitors ──
   const { wallets, defaultMinNotionalUsd } = await loadWallets({ onlyActive: true });
@@ -118,6 +120,7 @@ async function main(): Promise<void> {
     cleanupDetector();
     cleanupOutcomeChecker?.();
     cleanupPaperChecker();
+    cleanupDailyReport();
     await poller.stop();
     await cleanupPriceCache();
     await cleanupHl();

@@ -64,7 +64,7 @@ export async function startPaperEngine(bus: EventBus): Promise<void> {
   });
 
   console.log(
-    `[paper-engine] started — coins=${config.coins.join(",")} budget=$${config.budgetUsd} tp=${config.tpPct}% sl=${config.slPct}%`,
+    `[paper-engine] started — coins=${config.coins.join(",")} signals=${config.signalTypes.join(",")} budget=$${config.budgetUsd} tp=${config.tpPct}% sl=${config.slPct}% minConf=${config.minConfidence}`,
   );
 }
 
@@ -78,19 +78,25 @@ function handleSignal(
     return;
   }
 
-  // 2. Confidence check
+  // 2. Signal type filter
+  if (!config.signalTypes.includes(signal.type)) {
+    console.log(`[paper-engine] skip ${signal.coin} — signal type ${signal.type} not in [${config.signalTypes}]`);
+    return;
+  }
+
+  // 3. Confidence check
   if (signal.confidence < config.minConfidence) {
     console.log(`[paper-engine] skip ${signal.coin} — confidence ${signal.confidence} < ${config.minConfidence}`);
     return;
   }
 
-  // 3. Duplicate check — already have an open position for this coin
+  // 4. Duplicate check — already have an open position for this coin
   if (openPositions.has(signal.coin)) {
     console.log(`[paper-engine] skip ${signal.coin} — already have open position`);
     return;
   }
 
-  // 4. Get current price
+  // 5. Get current price
   const currentPrice = getPrice(signal.coin);
   const entryPrice = currentPrice ?? signal.priceAtSignal;
   if (entryPrice <= 0) {
@@ -98,7 +104,7 @@ function handleSignal(
     return;
   }
 
-  // 5. Calculate TP/SL
+  // 6. Calculate TP/SL
   const { tpPct, slPct, positionSizeUsd, maxHoldH } = config;
   let tpPrice: number;
   let slPrice: number;
@@ -119,7 +125,7 @@ function handleSignal(
   // Track in-memory
   openPositions.set(signal.coin, { id, direction: signal.direction });
 
-  // 6. Emit paper:open
+  // 7. Emit paper:open
   const event: PaperTradeOpenEvent = {
     id,
     signalId: signal.id,

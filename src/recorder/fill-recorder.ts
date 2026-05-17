@@ -28,7 +28,7 @@ export function startFillRecorder(bus: EventBus): void {
         ${fill.coin}, ${fill.side}, ${fill.px}, ${fill.sz},
         ${fill.notionalUsd}, ${fill.time}, ${uniqueHash},
         ${fill.oid ?? null}, ${fill.tid ?? null}, ${fill.crossed ?? false},
-        ${toNumericOrNull(fill.fee)}, ${fill.feeToken ?? null},
+        ${toNumericOrNull(fill.fee) ?? "0"}, ${fill.feeToken ?? "USDC"},
         ${toNumericOrNull(fill.startPosition)}, ${toNumericOrNull(fill.closedPnl)}, ${fill.dir || null},
         ${fill.walletAddress}, ${fill.walletLabel}, ${fill.walletCategory},
         ${fill.exchange}, ${fill.txHash ?? null}
