@@ -81,7 +81,7 @@ function getExplorerUrl(fill: Fill): string | undefined {
 }
 
 const EXCHANGE_BADGES: Record<Exchange, string> = {
-  hyperliquid: "\u26A1HL",
+  hyperliquid: "\u26A1Hyperliquid",
   helix: "\uD83C\uDF00Helix",
 };
 
@@ -151,10 +151,19 @@ export function buildFillEmbed(fill: Fill, wallet: Wallet): DiscordPayload {
 
 // ── Signal Embed ──
 
-const SIGNAL_TYPE_LABELS: Record<string, string> = {
-  confluence: "Confluence",
-  new_entry: "New Entry",
-  flow_shift: "Flow Shift",
+const SIGNAL_TYPE_LABELS_SIGNAL: Record<string, { name: string; desc: string }> = {
+  confluence: {
+    name: "Confluence (合流)",
+    desc: "15分以内に複数のSMが同じ方向に取引",
+  },
+  new_entry: {
+    name: "New Entry (新規参入)",
+    desc: "SMが新しいポジションを開始",
+  },
+  flow_shift: {
+    name: "Flow Shift (資金フロー転換)",
+    desc: "30分間の資金フローが一方向に大きく偏った",
+  },
 };
 
 function confidenceBar(value: number): string {
@@ -162,10 +171,17 @@ function confidenceBar(value: number): string {
   return "\u2588".repeat(filled) + "\u2591".repeat(10 - filled) + ` ${Math.round(value * 100)}%`;
 }
 
+function confidenceLabel(value: number): string {
+  if (value >= 0.85) return "非常に高い";
+  if (value >= 0.7) return "高い";
+  if (value >= 0.5) return "中程度";
+  return "低い";
+}
+
 export function buildSignalEmbed(signal: SignalDetectedEvent): DiscordPayload {
   const isLong = signal.direction === "long";
   const dirEmoji = isLong ? "\uD83D\uDD35" : "\uD83D\uDFE0";
-  const direction = isLong ? "LONG" : "SHORT";
+  const dirJa = isLong ? "\u30ED\u30F3\u30B0\uFF08\u4E0A\u6607\u4E88\u60F3\uFF09" : "\u30B7\u30E7\u30FC\u30C8\uFF08\u4E0B\u843D\u4E88\u60F3\uFF09";
   const color = isLong ? COLOR_SIGNAL_LONG : COLOR_SIGNAL_SHORT;
 
   const priceStr = signal.priceAtSignal.toLocaleString("en-US", {
@@ -173,33 +189,47 @@ export function buildSignalEmbed(signal: SignalDetectedEvent): DiscordPayload {
     maximumFractionDigits: 2,
   });
 
+  const typeInfo = SIGNAL_TYPE_LABELS_SIGNAL[signal.type] ?? { name: signal.type, desc: "" };
+  const confLabel = confidenceLabel(signal.confidence);
+  const confPct = Math.round(signal.confidence * 100);
+
+  // Build narrative description
+  const actionJa = isLong ? "\u8CB7\u3044\u5411\u304D" : "\u58F2\u308A\u5411\u304D";
+  const description =
+    `**\u691C\u77E5\u5185\u5BB9**: ${typeInfo.desc}\n` +
+    `SM\uFF08\u30B9\u30DE\u30FC\u30C8\u30DE\u30CD\u30FC\uFF09\u306E\u52D5\u304D\u304B\u3089\u3001${signal.coin}\u304C**${actionJa}**\u306E\u53EF\u80FD\u6027\u3092\u691C\u77E5\u3002\n` +
+    `\u78BA\u4FE1\u5EA6: **${confPct}%**\uFF08${confLabel}\uFF09`;
+
   const fields: { name: string; value: string; inline?: boolean }[] = [
-    { name: "Type", value: SIGNAL_TYPE_LABELS[signal.type] ?? signal.type, inline: true },
-    { name: "Direction", value: `${dirEmoji} ${direction}`, inline: true },
-    { name: "Confidence", value: confidenceBar(signal.confidence), inline: true },
-    { name: "Price", value: `$${priceStr}`, inline: true },
-    { name: "Wallets", value: signal.walletLabels.join(", "), inline: true },
+    { name: "\u30B7\u30B0\u30CA\u30EB\u7A2E\u5225", value: typeInfo.name, inline: true },
+    { name: "\u65B9\u5411", value: `${dirEmoji} ${dirJa}`, inline: true },
+    { name: "\u78BA\u4FE1\u5EA6", value: confidenceBar(signal.confidence), inline: false },
+    { name: "\u691C\u77E5\u6642\u4FA1\u683C", value: `$${priceStr}`, inline: true },
+    { name: "\u95A2\u4E0E\u30A6\u30A9\u30EC\u30C3\u30C8", value: signal.walletLabels.join(", "), inline: true },
   ];
 
   // Add metadata fields
   const meta = signal.metadata;
   if (meta.totalNotionalUsd) {
     const notStr = (meta.totalNotionalUsd as number).toLocaleString("en-US");
-    fields.push({ name: "Total Notional", value: `$${notStr}`, inline: true });
+    fields.push({ name: "\u5408\u8A08\u53D6\u5F15\u984D", value: `$${notStr}`, inline: true });
   }
   if (meta.netFlowUsd) {
-    const flowStr = (meta.netFlowUsd as number).toLocaleString("en-US");
-    fields.push({ name: "Net Flow", value: `$${flowStr}`, inline: true });
+    const flow = meta.netFlowUsd as number;
+    const flowStr = Math.abs(flow).toLocaleString("en-US");
+    const flowDir = flow >= 0 ? "\u8CB7\u3044\u8D8A\u3057" : "\u58F2\u308A\u8D8A\u3057";
+    fields.push({ name: "\u7D14\u30D5\u30ED\u30FC", value: `$${flowStr}\uFF08${flowDir}\uFF09`, inline: true });
   }
 
   return {
     embeds: [
       {
-        title: `${dirEmoji} Signal: ${signal.coin} ${direction}`,
+        title: `${dirEmoji} \u30B7\u30B0\u30CA\u30EB\u691C\u77E5: ${signal.coin} ${dirJa}`,
+        description,
         color,
         fields,
         timestamp: signal.detectedAt.toISOString(),
-        footer: { text: "Smart Money Signal" },
+        footer: { text: "\u2139\uFE0F \u30B7\u30B0\u30CA\u30EB = SM\u306E\u53D6\u5F15\u30D1\u30BF\u30FC\u30F3\u304B\u3089\u306E\u65B9\u5411\u6027\u691C\u77E5\u3002\u6295\u8CC7\u52A9\u8A00\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002" },
       },
     ],
   };
@@ -207,53 +237,73 @@ export function buildSignalEmbed(signal: SignalDetectedEvent): DiscordPayload {
 
 // ── Insight Embed ──
 
+const INSIGHT_TYPE_LABELS: Record<string, string> = {
+  sm_only: "SM\u5358\u72EC\u5206\u6790",
+  sm_pm_aligned: "SM + \u4E88\u6E2C\u5E02\u5834\u4E00\u81F4",
+  sm_pm_divergent: "SM \u2194 \u4E88\u6E2C\u5E02\u5834\u4E0D\u4E00\u81F4",
+};
+
 export function buildInsightEmbed(insight: InsightGeneratedEvent): DiscordPayload {
   const isLong = insight.direction === "long";
   const dirEmoji = isLong ? "\uD83D\uDFE2" : "\uD83D\uDD34";
-  const direction = isLong ? "LONG" : "SHORT";
+  const dirJa = isLong ? "\u30ED\u30F3\u30B0\uFF08\u4E0A\u6607\u4E88\u60F3\uFF09" : "\u30B7\u30E7\u30FC\u30C8\uFF08\u4E0B\u843D\u4E88\u60F3\uFF09";
 
   const priceStr = insight.priceAtInsight.toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 
+  const scorePct = Math.round(insight.combinedScore * 100);
+  const scoreLabel = confidenceLabel(insight.combinedScore);
+
+  // Build description with explanation
+  const meta = insight.metadata;
+  const insightTypeJa = INSIGHT_TYPE_LABELS[meta.insightType as string] ?? (meta.insightType as string);
+  let description = insight.summary + "\n\n";
+  description += `**\u7DCF\u5408\u30B9\u30B3\u30A2: ${scorePct}%**\uFF08${scoreLabel}\uFF09\n`;
+  description += `\u2514 SM\u306E\u53D6\u5F15\u30D1\u30BF\u30FC\u30F3`;
+  if (insight.pmSentiment !== null) {
+    description += ` + Polymarket\u4E88\u6E2C\u5E02\u5834\u3092\u7D71\u5408\u3057\u305F\u5224\u5B9A`;
+  } else {
+    description += `\u306B\u57FA\u3065\u304F\u5224\u5B9A\uFF08\u4E88\u6E2C\u5E02\u5834\u30C7\u30FC\u30BF\u306A\u3057\uFF09`;
+  }
+
   const fields: { name: string; value: string; inline?: boolean }[] = [
-    { name: "Score", value: confidenceBar(insight.combinedScore), inline: false },
-    { name: "SM Confidence", value: confidenceBar(insight.smConfidence), inline: true },
+    { name: "\u7DCF\u5408\u30B9\u30B3\u30A2", value: confidenceBar(insight.combinedScore), inline: false },
+    { name: "SM\u78BA\u4FE1\u5EA6", value: confidenceBar(insight.smConfidence), inline: true },
   ];
 
   if (insight.pmSentiment !== null) {
-    fields.push({ name: "PM Sentiment", value: confidenceBar(insight.pmSentiment), inline: true });
+    fields.push({ name: "\u4E88\u6E2C\u5E02\u5834\u30BB\u30F3\u30C1\u30E1\u30F3\u30C8", value: confidenceBar(insight.pmSentiment), inline: true });
+  } else {
+    fields.push({ name: "\u4E88\u6E2C\u5E02\u5834", value: "\u5BFE\u5FDC\u5E02\u5834\u306A\u3057", inline: true });
   }
 
   fields.push(
-    { name: "Direction", value: `${dirEmoji} ${direction}`, inline: true },
-    { name: "Price", value: `$${priceStr}`, inline: true },
+    { name: "\u65B9\u5411", value: `${dirEmoji} ${dirJa}`, inline: true },
+    { name: "\u691C\u77E5\u6642\u4FA1\u683C", value: `$${priceStr}`, inline: true },
   );
 
   // Add PM market info from metadata
-  const meta = insight.metadata;
   if (meta.pmQuestion) {
     fields.push({
-      name: "Polymarket",
+      name: "Polymarket\u4E88\u6E2C",
       value: `"${meta.pmQuestion}" \u2192 ${Math.round((meta.pmPrice as number) * 100)}%`,
       inline: false,
     });
   }
 
-  if (meta.insightType) {
-    fields.push({ name: "Type", value: meta.insightType as string, inline: true });
-  }
+  fields.push({ name: "\u5206\u6790\u30BF\u30A4\u30D7", value: insightTypeJa, inline: true });
 
   return {
     embeds: [
       {
-        title: `\uD83D\uDD2E Insight: ${insight.coin} ${direction}`,
-        description: insight.summary,
+        title: `\uD83D\uDD2E \u7DCF\u5408\u5206\u6790: ${insight.coin} ${dirJa}`,
+        description,
         color: COLOR_INSIGHT,
         fields,
         timestamp: insight.generatedAt.toISOString(),
-        footer: { text: "\u26A0\uFE0F \u514D\u8CAC: \u60C5\u5831\u63D0\u4F9B\u76EE\u7684\u306E\u307F\u3002\u6295\u8CC7\u52A9\u8A00\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002 | Smart Money Insight" },
+        footer: { text: "\u26A0\uFE0F \u60C5\u5831\u63D0\u4F9B\u76EE\u7684\u306E\u307F\u3002\u6295\u8CC7\u52A9\u8A00\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002 | Smart Money Insight" },
       },
     ],
   };
