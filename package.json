@@ -16,7 +16,7 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@injectivelabs/networks": "^1.19.6",
+    "@injectivelabs/networks": "^1.19.12",
     "@injectivelabs/sdk-ts": "^1.19.6",
     "@neondatabase/serverless": "^0.10.4",
     "@nktkas/hyperliquid": "^0.32.2",
