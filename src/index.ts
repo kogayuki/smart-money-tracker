@@ -22,6 +22,9 @@ import { startPaperRecorder } from "./paper/recorder.js";
 import { startPaperNotifier } from "./paper/notifier.js";
 import { startPaperChecker } from "./paper/checker.js";
 import { startDailyReport } from "./paper/daily-report.js";
+import { startAutoTrader } from "./auto-trader/engine.js";
+import { startAutoTradeNotifier } from "./auto-trader/notifier.js";
+import { startAutoTradeRecorder } from "./auto-trader/recorder.js";
 
 const NODE_ENV = process.env.NODE_ENV ?? "development";
 const PORT = Number(process.env.PORT ?? 3000);
@@ -54,11 +57,15 @@ async function main(): Promise<void> {
   await notifyDiscord(`smart-money-tracker booted at ${startedAt.toISOString()}`);
   console.log("[boot] notify ok");
 
-  // ── DB setup (optional — graceful if DATABASE_URL not set) ──
+  // ── DB setup (optional — graceful if DATABASE_URL not set or quota exceeded) ──
   const sql = getDb();
   if (sql) {
-    await runMigrations(sql);
-    console.log("[boot] migrations complete");
+    try {
+      await runMigrations(sql);
+      console.log("[boot] migrations complete");
+    } catch (err) {
+      console.error("[boot] DB migration failed — continuing without DB:", err instanceof Error ? err.message : err);
+    }
   }
 
   // ── EventBus ──
@@ -94,6 +101,11 @@ async function main(): Promise<void> {
   startPaperNotifier(bus);
   const cleanupPaperChecker = startPaperChecker(bus);
   const cleanupDailyReport = startDailyReport();
+
+  // ── Auto trading (real on-chain trades on Injective) ──
+  await startAutoTrader(bus);
+  startAutoTradeNotifier(bus);
+  startAutoTradeRecorder(bus);
 
   // ── Load active wallets and start exchange monitors ──
   const { wallets, defaultMinNotionalUsd } = await loadWallets({ onlyActive: true });

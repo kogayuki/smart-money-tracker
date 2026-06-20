@@ -95,6 +95,30 @@ export type PaperTradeCloseEvent = {
   closedAt: Date;
 };
 
+export type AutoTradeOpenEvent = {
+  id: string;
+  signalId: string;
+  coin: string;
+  direction: "long" | "short";
+  txHash: string;
+  executionPrice: string;
+  quantity: string;
+  margin: string;
+  leverage: number;
+  feeRecipient: string;
+  signalType: string;
+  signalConfidence: number;
+  openedAt: Date;
+};
+
+export type AutoTradeErrorEvent = {
+  signalId: string;
+  coin: string;
+  direction: "long" | "short";
+  error: string;
+  occurredAt: Date;
+};
+
 // ── Event map ──
 
 export type EventMap = {
@@ -103,6 +127,8 @@ export type EventMap = {
   "insight:generated": InsightGeneratedEvent;
   "paper:open": PaperTradeOpenEvent;
   "paper:close": PaperTradeCloseEvent;
+  "auto-trade:open": AutoTradeOpenEvent;
+  "auto-trade:error": AutoTradeErrorEvent;
 };
 
 // ── Typed EventBus ──
