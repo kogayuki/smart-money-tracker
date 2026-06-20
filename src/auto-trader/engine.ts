@@ -15,17 +15,19 @@ import { loadAutoTraderConfig, type AutoTraderConfig } from "./config.js";
 // ── State ──
 
 const openPositions = new Set<string>();
-let assetMap: Map<string, number> | null = null;
+
+type AssetInfo = { index: number; szDecimals: number };
+let assetMap: Map<string, AssetInfo> | null = null;
 
 // ── Hyperliquid helpers ──
 
-async function loadAssetMap(transport: HttpTransport): Promise<Map<string, number>> {
+async function loadAssetMap(transport: HttpTransport): Promise<Map<string, AssetInfo>> {
   if (assetMap) return assetMap;
   const info = await meta({ transport });
-  assetMap = new Map<string, number>();
+  assetMap = new Map<string, AssetInfo>();
   for (let i = 0; i < info.universe.length; i++) {
     const asset = info.universe[i];
-    if (asset) assetMap.set(asset.name.toUpperCase(), i);
+    if (asset) assetMap.set(asset.name.toUpperCase(), { index: i, szDecimals: asset.szDecimals });
   }
   return assetMap;
 }
@@ -48,12 +50,13 @@ async function executeHyperliquidTrade(
     isTestnet: config.network === "testnet",
   });
 
-  // 1. Resolve asset ID
+  // 1. Resolve asset ID and size decimals
   const assets = await loadAssetMap(transport);
-  const assetId = assets.get(signal.coin.toUpperCase());
-  if (assetId === undefined) {
+  const assetInfo = assets.get(signal.coin.toUpperCase());
+  if (!assetInfo) {
     throw new Error(`Unknown asset: ${signal.coin}`);
   }
+  const { index: assetId, szDecimals } = assetInfo;
 
   // 2. Get current price
   const mids = await allMids({ transport });
@@ -68,9 +71,9 @@ async function executeHyperliquidTrade(
   const limitPrice = midPrice * slippageMultiplier;
   const quantity = config.positionSizeUsd / midPrice;
 
-  // Round price to 5 sig figs (Hyperliquid requirement)
+  // Round price to 5 sig figs, quantity to szDecimals
   const priceStr = roundToSigFigs(limitPrice, 5);
-  const qtyStr = roundToSigFigs(quantity, 5);
+  const qtyStr = quantity.toFixed(szDecimals);
 
   // 4. Create wallet signer
   const wallet = privateKeyToAccount(config.privateKey as `0x${string}`);
@@ -155,12 +158,12 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
 
     const { updateLeverage } = await import("@nktkas/hyperliquid/api/exchange");
     for (const coin of config.coins) {
-      const assetId = assets.get(coin);
-      if (assetId === undefined) continue;
+      const info = assets.get(coin);
+      if (!info) continue;
       try {
         await updateLeverage(
           { transport, wallet },
-          { asset: assetId, isCross: true, leverage: config.leverage },
+          { asset: info.index, isCross: true, leverage: config.leverage },
         );
         console.log(`[auto-trader] leverage set: ${coin} ${config.leverage}x cross`);
       } catch (e) {

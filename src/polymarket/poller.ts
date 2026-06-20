@@ -63,7 +63,11 @@ export class PolymarketPoller {
       }
 
       // Persist to DB
-      await this.persistMarkets(markets);
+      try {
+        await this.persistMarkets(markets);
+      } catch (dbErr) {
+        console.error("[pm-poller] persist error:", dbErr instanceof Error ? dbErr.message : dbErr);
+      }
     } catch (err) {
       console.error("[pm-poller] fetch error:", err);
     }

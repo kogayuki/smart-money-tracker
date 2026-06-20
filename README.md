@@ -79,14 +79,21 @@ Hyperliquid と Injective Helix のデリバティブ市場をリアルタイム
 │  │  sm:fill → signal:detected →    │           │               │
 │  │  insight:generated →            │           │               │
 │  │  paper:open / paper:close       │◄──────────┘               │
+│  │  auto-trade:open / error        │                            │
 │  └──────────────┬──────────────────┘                            │
 │                 │                                                │
-│    ┌────────────┼────────────┬───────────────┐                  │
-│    ▼            ▼            ▼               ▼                  │
-│ ┌──────┐  ┌─────────┐  ┌─────────┐   ┌───────────┐            │
-│ │Signal│  │ Insight  │  │ Paper   │   │ Discord   │            │
-│ │Detect│  │Generator │  │ Engine  │   │ Notifier  │            │
-│ └──────┘  └─────────┘  └─────────┘   └───────────┘            │
+│    ┌────────────┼────────────┬──────────┬────────┐              │
+│    ▼            ▼            ▼          ▼        ▼              │
+│ ┌──────┐  ┌─────────┐  ┌─────────┐ ┌──────┐ ┌───────┐        │
+│ │Signal│  │ Insight  │  │ Paper   │ │ Auto │ │Discord│        │
+│ │Detect│  │Generator │  │ Engine  │ │Trader│ │Notify │        │
+│ └──────┘  └─────────┘  └─────────┘ └──┬───┘ └───────┘        │
+│                                        │                        │
+│                                        ▼                        │
+│                                   ┌──────────┐                  │
+│                                   │Hyperliquid│                 │
+│                                   │ Mainnet   │                 │
+│                                   └──────────┘                  │
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────┐       │
 │  │              Neon Postgres (永続化)                    │       │
@@ -157,7 +164,41 @@ paper:close ── 決済 & P&L計算
 | 最低確信度 | 0.7 |
 | 対象シグナル | flow_shift, confluence |
 
-### 5. Discord リアルタイム通知
+### 5. Auto-Trader（自動売買）
+
+シグナル発火と同時に Hyperliquid メインネットで実注文を自動執行:
+
+```
+signal:detected (confidence >= 0.8)
+    │
+    ▼
+Auto-Trader Engine ── エントリー判断
+    │                   • コイン/シグナル種別フィルタ
+    │                   • 確信度チェック
+    │                   • 重複・最大ポジションチェック
+    ▼
+Hyperliquid IOC 注文 ── 即時約定
+    │
+    ▼
+Discord 通知 + DB 記録
+```
+
+| パラメータ | デフォルト値 | 環境変数 |
+|-----------|------------|---------|
+| 対象取引所 | Hyperliquid | `AUTO_TRADER_EXCHANGE` |
+| 対象コイン | BTC, ETH | `AUTO_TRADER_COINS` |
+| ポジションサイズ | $10 | `AUTO_TRADER_POSITION_SIZE_USD` |
+| レバレッジ | 5x (cross) | `AUTO_TRADER_LEVERAGE` |
+| スリッページ | 2% | `AUTO_TRADER_SLIPPAGE` |
+| 最低確信度 | 0.8 | `AUTO_TRADER_MIN_CONFIDENCE` |
+| 最大同時ポジション | 3 | `AUTO_TRADER_MAX_POSITIONS` |
+
+**有効化手順:**
+1. Hyperliquid に USDC を入金（[app.hyperliquid.xyz](https://app.hyperliquid.xyz) → Deposit）
+2. `.env` に `AUTO_TRADER_PRIVATE_KEY` と `AUTO_TRADER_ENABLED=true` を設定
+3. 起動 → シグナル待ち → 自動約定
+
+### 6. Discord リアルタイム通知
 
 すべてのイベントを Discord Webhook 経由で即時通知:
 
@@ -201,6 +242,8 @@ type EventMap = {
   "insight:generated":  InsightGeneratedEvent; // インサイト生成
   "paper:open":         PaperTradeOpenEvent;   // 仮想エントリー
   "paper:close":        PaperTradeCloseEvent;  // 仮想決済
+  "auto-trade:open":    AutoTradeOpenEvent;    // 実注文約定
+  "auto-trade:error":   AutoTradeErrorEvent;   // 実注文エラー
 };
 ```
 
@@ -254,6 +297,12 @@ src/
 │   ├── notifier.ts             #   paper:open/close → Discord通知
 │   └── daily-report.ts         #   日次パフォーマンスレポート
 │
+├── auto-trader/                # 自動売買
+│   ├── config.ts               #   環境変数から設定読み込み
+│   ├── engine.ts               #   signal:detected → Hyperliquid IOC注文
+│   ├── notifier.ts             #   約定/エラー → Discord通知
+│   └── recorder.ts             #   約定/エラー → DB記録
+│
 ├── recorder/
 │   └── fill-recorder.ts        # 取引データ → DB永続化
 ├── listeners/
@@ -283,14 +332,14 @@ src/
 └──────────────┘    └──────┬───────┘    │ SM + PM 統合       │
                            │            └───────────────────┘
                            ▼
-                    ┌──────────────┐
-                    │ paper_trades │
-                    │              │
-                    │ entry/exit   │
-                    │ tp/sl price  │
-                    │ pnl_usd/pct  │
-                    │ status       │
-                    └──────────────┘
+                    ┌──────────────┐    ┌──────────────────┐
+                    │ paper_trades │    │   auto_trades    │
+                    │              │    │                  │
+                    │ entry/exit   │    │ tx_hash, coin    │
+                    │ tp/sl price  │    │ direction, qty   │
+                    │ pnl_usd/pct  │    │ execution_price  │
+                    │ status       │    │ leverage         │
+                    └──────────────┘    └──────────────────┘
 ```
 
 ---
@@ -320,7 +369,19 @@ cp .env.example .env
 | 変数名 | 必須 | 説明 |
 |--------|------|------|
 | `DISCORD_WEBHOOK_URL` | Yes | Discord Webhook URL |
-| `DATABASE_URL` | Yes | Neon Postgres 接続文字列 |
+| `DATABASE_URL` | No | Neon Postgres 接続文字列（なくても動作する） |
+| **Auto-Trader** | | |
+| `AUTO_TRADER_ENABLED` | No | 自動売買 ON/OFF (default: `false`) |
+| `AUTO_TRADER_EXCHANGE` | No | 取引所 (default: `hyperliquid`) |
+| `AUTO_TRADER_NETWORK` | No | ネットワーク (default: `mainnet`) |
+| `AUTO_TRADER_PRIVATE_KEY` | *※ | ウォレット秘密鍵 (※ AUTO_TRADER_ENABLED=true 時必須) |
+| `AUTO_TRADER_COINS` | No | 対象コイン (default: `BTC,ETH`) |
+| `AUTO_TRADER_POSITION_SIZE_USD` | No | 1注文サイズ (default: `10`) |
+| `AUTO_TRADER_LEVERAGE` | No | レバレッジ (default: `5`) |
+| `AUTO_TRADER_SLIPPAGE` | No | スリッページ (default: `0.02`) |
+| `AUTO_TRADER_MIN_CONFIDENCE` | No | 最低確信度 (default: `0.8`) |
+| `AUTO_TRADER_MAX_POSITIONS` | No | 最大同時ポジション (default: `3`) |
+| **Paper Trading** | | |
 | `PAPER_ENABLED` | No | ペーパートレード ON/OFF (default: `true`) |
 | `PAPER_COINS` | No | 対象コイン (default: `BTC,INJ`) |
 | `PAPER_TP_PCT` | No | 利確% (default: `5`) |
@@ -432,6 +493,10 @@ DATABASE_URL=<your-url> npx tsx src/scripts/report.ts
 
 ---
 
+## Disclaimer
+
+本ソフトウェアは教育・研究目的で提供されています。自動売買機能の使用は自己責任で行ってください。暗号資産取引にはリスクが伴います。投資助言ではありません。
+
 ## License
 
-Private
+MIT
