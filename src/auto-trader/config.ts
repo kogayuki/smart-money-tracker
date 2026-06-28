@@ -22,6 +22,12 @@ export type AutoTraderConfig = {
   minConfidence: number;
   /** Maximum concurrent positions */
   maxPositions: number;
+  /** Take profit percentage (e.g. 5 = +5%) */
+  tpPct: number;
+  /** Stop loss percentage (e.g. 3 = -3%) */
+  slPct: number;
+  /** Maximum hold time in hours */
+  maxHoldH: number;
   /** Fee recipient (Injective only: inj1... address) */
   feeRecipient: string;
   /** Builder fee address (Hyperliquid only: 0x... address) */
@@ -53,6 +59,9 @@ export function loadAutoTraderConfig(): AutoTraderConfig {
     slippage: Number(process.env.AUTO_TRADER_SLIPPAGE ?? "0.02"),
     minConfidence: Number(process.env.AUTO_TRADER_MIN_CONFIDENCE ?? "0.8"),
     maxPositions: Number(process.env.AUTO_TRADER_MAX_POSITIONS ?? "3"),
+    tpPct: Number(process.env.AUTO_TRADER_TP_PCT ?? "5"),
+    slPct: Number(process.env.AUTO_TRADER_SL_PCT ?? "3"),
+    maxHoldH: Number(process.env.AUTO_TRADER_MAX_HOLD_H ?? "24"),
     feeRecipient: process.env.AUTO_TRADER_FEE_RECIPIENT ?? "",
     builderAddress: process.env.AUTO_TRADER_BUILDER_ADDRESS ?? "",
     builderFee: Number(process.env.AUTO_TRADER_BUILDER_FEE ?? "0"),

@@ -111,6 +111,21 @@ export type AutoTradeOpenEvent = {
   openedAt: Date;
 };
 
+export type AutoTradeCloseEvent = {
+  id: string;
+  coin: string;
+  direction: "long" | "short";
+  entryPrice: number;
+  exitPrice: number;
+  quantity: number;
+  pnlUsd: number;
+  pnlPct: number;
+  status: "closed_tp" | "closed_sl" | "closed_timeout";
+  txHash: string;
+  openedAt: Date;
+  closedAt: Date;
+};
+
 export type AutoTradeErrorEvent = {
   signalId: string;
   coin: string;
@@ -128,6 +143,7 @@ export type EventMap = {
   "paper:open": PaperTradeOpenEvent;
   "paper:close": PaperTradeCloseEvent;
   "auto-trade:open": AutoTradeOpenEvent;
+  "auto-trade:close": AutoTradeCloseEvent;
   "auto-trade:error": AutoTradeErrorEvent;
 };
 

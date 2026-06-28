@@ -11,6 +11,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { EventBus, SignalDetectedEvent, AutoTradeOpenEvent } from "../events/bus.js";
 import { getPrice } from "../signal/price-cache.js";
 import { loadAutoTraderConfig, type AutoTraderConfig } from "./config.js";
+import { trackPosition, untrackPosition } from "./checker.js";
 
 // ── State ──
 
@@ -174,6 +175,11 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
     console.warn("[auto-trader] leverage setup error:", e instanceof Error ? e.message : e);
   }
 
+  // Clear openPositions when auto-trade:close fires
+  bus.on("auto-trade:close", (event) => {
+    openPositions.delete(event.coin);
+  });
+
   bus.on("signal:detected", (signal) => {
     // 1. Coin filter
     if (!config.coins.includes(signal.coin.toUpperCase())) return;
@@ -208,6 +214,17 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
     executeHyperliquidTrade(config, signal)
       .then((result) => {
         openPositions.add(signal.coin);
+
+        // Track for TP/SL/timeout checker
+        trackPosition(
+          signal.coin,
+          signal.direction,
+          Number(result.executionPrice),
+          Number(result.quantity),
+          config.tpPct,
+          config.slPct,
+          config.maxHoldH,
+        );
 
         const event: AutoTradeOpenEvent = {
           id: `at_${signal.id}`,

@@ -23,6 +23,7 @@ import { startPaperNotifier } from "./paper/notifier.js";
 import { startPaperChecker } from "./paper/checker.js";
 import { startDailyReport } from "./paper/daily-report.js";
 import { startAutoTrader } from "./auto-trader/engine.js";
+import { startAutoTradeChecker } from "./auto-trader/checker.js";
 import { startAutoTradeNotifier } from "./auto-trader/notifier.js";
 import { startAutoTradeRecorder } from "./auto-trader/recorder.js";
 
@@ -102,8 +103,9 @@ async function main(): Promise<void> {
   const cleanupPaperChecker = startPaperChecker(bus);
   const cleanupDailyReport = startDailyReport();
 
-  // ── Auto trading (real on-chain trades on Injective) ──
+  // ── Auto trading (Hyperliquid live trades) ──
   await startAutoTrader(bus);
+  const cleanupAutoChecker = startAutoTradeChecker(bus);
   startAutoTradeNotifier(bus);
   startAutoTradeRecorder(bus);
 
@@ -132,6 +134,7 @@ async function main(): Promise<void> {
     cleanupDetector();
     cleanupOutcomeChecker?.();
     cleanupPaperChecker();
+    cleanupAutoChecker();
     cleanupDailyReport();
     await poller.stop();
     await cleanupPriceCache();

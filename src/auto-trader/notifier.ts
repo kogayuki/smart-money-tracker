@@ -17,6 +17,20 @@ export function startAutoTradeNotifier(bus: EventBus): void {
     void notifyDiscord(lines.join("\n"));
   });
 
+  bus.on("auto-trade:close", (event) => {
+    const emoji = event.pnlUsd >= 0 ? "🟢" : "🔴";
+    const sign = event.pnlUsd >= 0 ? "+" : "";
+    const statusLabel = event.status === "closed_tp" ? "TP利確" : event.status === "closed_sl" ? "SL損切" : "タイムアウト";
+    const lines = [
+      `${emoji} **AUTO-TRADE CLOSED (${statusLabel})**`,
+      `**${event.coin}** ${event.direction.toUpperCase()}`,
+      `Entry: $${event.entryPrice.toFixed(2)} → Exit: $${event.exitPrice.toFixed(2)}`,
+      `PnL: **${sign}$${event.pnlUsd.toFixed(2)}** (${sign}${event.pnlPct.toFixed(1)}%)`,
+      `TX: \`${event.txHash}\``,
+    ];
+    void notifyDiscord(lines.join("\n"));
+  });
+
   bus.on("auto-trade:error", (event) => {
     const lines = [
       `⚠️ **AUTO-TRADE FAILED**`,
