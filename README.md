@@ -2,7 +2,9 @@
 
 **24時間自律稼働する暗号資産スマートマネー追跡エージェント**
 
-Hyperliquid と Injective Helix のデリバティブ市場をリアルタイムで監視し、スマートマネー（大口トレーダー）の取引パターンを検知・分析・仮想売買検証まで全自動で行う常駐型 AI エージェント。
+Hyperliquid と Injective Helix のデリバティブ市場をリアルタイムで監視し、スマートマネー（大口トレーダー）の取引パターンを検知・分析・自動売買まで全自動で行う常駐型 AI エージェント。
+
+**[Live Dashboard](https://smart-money-dashboard-green.vercel.app)** | **[Injective Agent Registry #925](https://agents.injective.com/registry/925)**
 
 ---
 
