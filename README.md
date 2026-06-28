@@ -4,7 +4,7 @@
 
 Hyperliquid と Injective Helix のデリバティブ市場をリアルタイムで監視し、スマートマネー（大口トレーダー）の取引パターンを検知・分析・自動売買まで全自動で行う常駐型 AI エージェント。
 
-**[Live Dashboard](https://smart-money-dashboard-green.vercel.app)** | **[Injective Agent Registry #925](https://agents.injective.com/registry/925)**
+**[Live Dashboard](https://smt-deploy.vercel.app)**
 
 ---
 
