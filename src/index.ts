@@ -26,6 +26,7 @@ import { startAutoTrader } from "./auto-trader/engine.js";
 import { startAutoTradeChecker } from "./auto-trader/checker.js";
 import { startAutoTradeNotifier } from "./auto-trader/notifier.js";
 import { startAutoTradeRecorder } from "./auto-trader/recorder.js";
+import { startContextCollector } from "./signal/context-collector.js";
 
 const NODE_ENV = process.env.NODE_ENV ?? "development";
 const PORT = Number(process.env.PORT ?? 3000);
@@ -80,6 +81,7 @@ async function main(): Promise<void> {
   const cleanupDetector = startSignalDetector(bus);
   startSignalRecorder(bus);   // signal:detected → DB
   startSignalNotifier(bus);   // signal:detected → Discord
+  startContextCollector(bus); // signal:detected → FR/OI/volume snapshot
 
   // ── Price cache (for outcome checking + future use) ──
   const cleanupPriceCache = await startPriceCache();
