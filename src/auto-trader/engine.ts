@@ -17,6 +17,10 @@ import { trackPosition, untrackPosition } from "./checker.js";
 
 const openPositions = new Set<string>();
 
+/** Cooldown: coin:direction → cooldown expiry timestamp */
+const cooldowns = new Map<string, number>();
+const COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
+
 type AssetInfo = { index: number; szDecimals: number };
 let assetMap: Map<string, AssetInfo> | null = null;
 
@@ -187,9 +191,15 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
     console.warn("[auto-trader] startup error:", e instanceof Error ? e.message : e);
   }
 
-  // Clear openPositions when auto-trade:close fires
+  // Clear openPositions when auto-trade:close fires + set cooldown on SL
   bus.on("auto-trade:close", (event) => {
     openPositions.delete(event.coin);
+    if (event.status === "closed_sl") {
+      const key = `${event.coin}:${event.direction}`;
+      const expiry = Date.now() + COOLDOWN_MS;
+      cooldowns.set(key, expiry);
+      console.log(`[auto-trader] cooldown set: ${key} for 4h (until ${new Date(expiry).toISOString()})`);
+    }
   });
 
   bus.on("signal:detected", (signal) => {
@@ -208,19 +218,29 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
       return;
     }
 
-    // 4. Max positions check
+    // 4. Cooldown check (after SL, same coin+direction blocked for 4h)
+    const cooldownKey = `${signal.coin}:${signal.direction}`;
+    const cooldownExpiry = cooldowns.get(cooldownKey);
+    if (cooldownExpiry && Date.now() < cooldownExpiry) {
+      const remainMin = Math.round((cooldownExpiry - Date.now()) / 60000);
+      console.log(`[auto-trader] skip ${signal.coin} ${signal.direction} — cooldown (${remainMin}min remaining)`);
+      return;
+    }
+    if (cooldownExpiry) cooldowns.delete(cooldownKey); // expired, clean up
+
+    // 5. Max positions check
     if (openPositions.size >= config.maxPositions) {
       console.log(`[auto-trader] skip ${signal.coin} — max positions (${openPositions.size}/${config.maxPositions})`);
       return;
     }
 
-    // 5. Duplicate check
+    // 6. Duplicate check
     if (openPositions.has(signal.coin)) {
       console.log(`[auto-trader] skip ${signal.coin} — already open`);
       return;
     }
 
-    // 6. Execute
+    // 7. Execute
     console.log(`[auto-trader] executing ${signal.coin} ${signal.direction} (conf=${signal.confidence})`);
 
     executeHyperliquidTrade(config, signal)
