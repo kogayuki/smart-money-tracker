@@ -171,8 +171,20 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
         console.warn(`[auto-trader] leverage set failed for ${coin}:`, e instanceof Error ? e.message : e);
       }
     }
+    // Restore openPositions from existing Hyperliquid positions
+    const state = await (await import("@nktkas/hyperliquid/api/info")).clearinghouseState(
+      { transport }, { user: wallet.address },
+    );
+    for (const ap of state.assetPositions) {
+      if (Number(ap.position.szi) !== 0 && config.coins.includes(ap.position.coin.toUpperCase())) {
+        openPositions.add(ap.position.coin);
+      }
+    }
+    if (openPositions.size > 0) {
+      console.log(`[auto-trader] restored openPositions: ${[...openPositions].join(", ")}`);
+    }
   } catch (e) {
-    console.warn("[auto-trader] leverage setup error:", e instanceof Error ? e.message : e);
+    console.warn("[auto-trader] startup error:", e instanceof Error ? e.message : e);
   }
 
   // Clear openPositions when auto-trade:close fires

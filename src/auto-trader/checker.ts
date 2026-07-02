@@ -166,6 +166,61 @@ async function closePosition(
   );
 }
 
+/**
+ * Restore tracked positions from Hyperliquid on startup.
+ * This ensures TP/SL/timeout continues to work after a restart.
+ */
+async function restorePositions(config: AutoTraderConfig): Promise<void> {
+  try {
+    const transport = new HttpTransport({
+      isTestnet: config.network === "testnet",
+    });
+    const wallet = privateKeyToAccount(config.privateKey as `0x${string}`);
+    const state = await clearinghouseState({ transport }, { user: wallet.address });
+
+    if (state.assetPositions.length === 0) {
+      console.log("[auto-checker] no existing positions to restore");
+      return;
+    }
+
+    for (const ap of state.assetPositions) {
+      const pos = ap.position;
+      const coin = pos.coin;
+      const size = Number(pos.szi);
+      if (size === 0) continue;
+
+      // Only restore coins we're configured to trade
+      if (!config.coins.includes(coin.toUpperCase())) continue;
+
+      // Skip if already tracked (shouldn't happen on startup, but safety check)
+      if (tracked.has(coin)) continue;
+
+      const direction: "long" | "short" = size > 0 ? "long" : "short";
+      const entryPrice = Number(pos.entryPx);
+      const quantity = Math.abs(size);
+
+      // Reconstruct TP/SL from config
+      trackPosition(
+        coin,
+        direction,
+        entryPrice,
+        quantity,
+        config.tpPct,
+        config.slPct,
+        config.maxHoldH,
+      );
+
+      console.log(
+        `[auto-checker] restored ${coin} ${direction} entry=$${entryPrice.toFixed(2)} qty=${quantity}`,
+      );
+    }
+
+    console.log(`[auto-checker] restored ${tracked.size} position(s) from Hyperliquid`);
+  } catch (err) {
+    console.error("[auto-checker] restore failed:", err instanceof Error ? err.message : err);
+  }
+}
+
 export function startAutoTradeChecker(bus: EventBus): () => void {
   const config = loadAutoTraderConfig();
 
@@ -173,6 +228,9 @@ export function startAutoTradeChecker(bus: EventBus): () => void {
     console.log("[auto-checker] disabled");
     return () => {};
   }
+
+  // Restore existing positions from Hyperliquid (survives restart)
+  void restorePositions(config);
 
   const interval = setInterval(() => void checkAll(config, bus), CHECK_INTERVAL_MS);
   console.log(`[auto-checker] started (${CHECK_INTERVAL_MS / 1000}s interval, TP=${config.tpPct}% SL=${config.slPct}% timeout=${config.maxHoldH}h)`);
