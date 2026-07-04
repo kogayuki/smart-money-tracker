@@ -1,4 +1,4 @@
-export type AutoTraderExchange = "hyperliquid" | "injective";
+export type AutoTraderExchange = "hyperliquid" | "injective" | "grvt";
 
 export type AutoTraderConfig = {
   enabled: boolean;
@@ -34,12 +34,16 @@ export type AutoTraderConfig = {
   builderAddress: string;
   /** Builder fee in 0.1bps (Hyperliquid only, e.g. 10 = 0.01%) */
   builderFee: number;
+  /** GRVT API key */
+  grvtApiKey: string;
+  /** GRVT trading account ID */
+  grvtTradingAccountId: string;
 };
 
 export function loadAutoTraderConfig(): AutoTraderConfig {
   const exchange = (process.env.AUTO_TRADER_EXCHANGE ?? "hyperliquid") as AutoTraderExchange;
-  if (exchange !== "hyperliquid" && exchange !== "injective") {
-    throw new Error(`AUTO_TRADER_EXCHANGE must be "hyperliquid" or "injective", got "${exchange}"`);
+  if (exchange !== "hyperliquid" && exchange !== "injective" && exchange !== "grvt") {
+    throw new Error(`AUTO_TRADER_EXCHANGE must be "hyperliquid", "injective", or "grvt", got "${exchange}"`);
   }
 
   const network = process.env.AUTO_TRADER_NETWORK ?? "mainnet";
@@ -65,5 +69,7 @@ export function loadAutoTraderConfig(): AutoTraderConfig {
     feeRecipient: process.env.AUTO_TRADER_FEE_RECIPIENT ?? "",
     builderAddress: process.env.AUTO_TRADER_BUILDER_ADDRESS ?? "",
     builderFee: Number(process.env.AUTO_TRADER_BUILDER_FEE ?? "0"),
+    grvtApiKey: process.env.AUTO_TRADER_GRVT_API_KEY ?? "",
+    grvtTradingAccountId: process.env.AUTO_TRADER_GRVT_TRADING_ACCOUNT_ID ?? "",
   };
 }

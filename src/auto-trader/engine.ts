@@ -148,13 +148,19 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
     return;
   }
 
-  if (config.exchange !== "hyperliquid") {
-    console.log(`[auto-trader] exchange=${config.exchange} not yet supported in this version. Use hyperliquid.`);
+  if (config.exchange !== "hyperliquid" && config.exchange !== "grvt") {
+    console.log(`[auto-trader] exchange=${config.exchange} not supported. Use hyperliquid or grvt.`);
     return;
   }
 
-  // Set leverage on startup
+  // Set leverage on startup (Hyperliquid) or log (GRVT)
+  if (config.exchange === "grvt") {
+    const { setupGrvtLeverage } = await import("./grvt-executor.js");
+    await setupGrvtLeverage(config);
+  }
+
   try {
+    if (config.exchange !== "hyperliquid") throw new Error("skip HL setup");
     const transport = new HttpTransport({
       isTestnet: config.network === "testnet",
     });
@@ -241,9 +247,13 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
     }
 
     // 7. Execute
-    console.log(`[auto-trader] executing ${signal.coin} ${signal.direction} (conf=${signal.confidence})`);
+    console.log(`[auto-trader] executing ${signal.coin} ${signal.direction} on ${config.exchange} (conf=${signal.confidence})`);
 
-    executeHyperliquidTrade(config, signal)
+    const executeTrade = config.exchange === "grvt"
+      ? import("./grvt-executor.js").then(m => m.executeGrvtTrade(config, signal))
+      : executeHyperliquidTrade(config, signal);
+
+    executeTrade
       .then((result) => {
         openPositions.add(signal.coin);
 
