@@ -84,6 +84,47 @@ function roundToSigFigs(num: number, sigFigs: number): string {
   return result.toString();
 }
 
+function emitCloseEvent(
+  pos: TrackedPosition,
+  status: AutoTradeCloseEvent["status"],
+  exitPrice: number,
+  txHash: string,
+  bus: EventBus,
+): void {
+  // Calculate PnL
+  let pnlPct: number;
+  if (pos.direction === "long") {
+    pnlPct = ((exitPrice - pos.entryPrice) / pos.entryPrice) * 100;
+  } else {
+    pnlPct = ((pos.entryPrice - exitPrice) / pos.entryPrice) * 100;
+  }
+  const notional = pos.entryPrice * pos.quantity;
+  const pnlUsd = (pnlPct / 100) * notional;
+
+  const event: AutoTradeCloseEvent = {
+    id: `atc_${pos.coin}_${Date.now()}`,
+    coin: pos.coin,
+    direction: pos.direction,
+    entryPrice: pos.entryPrice,
+    exitPrice,
+    quantity: pos.quantity,
+    pnlUsd,
+    pnlPct,
+    status,
+    txHash,
+    openedAt: pos.openedAt,
+    closedAt: new Date(),
+  };
+
+  untrackPosition(pos.coin);
+  bus.emit("auto-trade:close", event);
+
+  const emoji = pnlUsd >= 0 ? "+" : "";
+  console.log(
+    `[auto-checker] CLOSED ${pos.coin} ${status} @ $${exitPrice.toFixed(2)} PnL: ${emoji}$${pnlUsd.toFixed(2)} (${emoji}${pnlPct.toFixed(1)}%) ${txHash}`,
+  );
+}
+
 async function closePosition(
   config: AutoTraderConfig,
   pos: TrackedPosition,
@@ -91,6 +132,19 @@ async function closePosition(
   currentPrice: number,
   bus: EventBus,
 ): Promise<void> {
+  if (config.exchange === "grvt") {
+    const { closeGrvtPosition } = await import("./grvt-executor.js");
+    const result = await closeGrvtPosition(
+      config,
+      pos.coin,
+      pos.direction,
+      pos.quantity,
+      currentPrice,
+    );
+    emitCloseEvent(pos, status, result.exitPrice, result.txHash, bus);
+    return;
+  }
+
   const transport = new HttpTransport({
     isTestnet: config.network === "testnet",
   });
@@ -132,38 +186,7 @@ async function closePosition(
     throw new Error(`Close rejected: ${orderStatus.error}`);
   }
 
-  // Calculate PnL
-  let pnlPct: number;
-  if (pos.direction === "long") {
-    pnlPct = ((exitPrice - pos.entryPrice) / pos.entryPrice) * 100;
-  } else {
-    pnlPct = ((pos.entryPrice - exitPrice) / pos.entryPrice) * 100;
-  }
-  const notional = pos.entryPrice * pos.quantity;
-  const pnlUsd = (pnlPct / 100) * notional;
-
-  const event: AutoTradeCloseEvent = {
-    id: `atc_${pos.coin}_${Date.now()}`,
-    coin: pos.coin,
-    direction: pos.direction,
-    entryPrice: pos.entryPrice,
-    exitPrice,
-    quantity: pos.quantity,
-    pnlUsd,
-    pnlPct,
-    status,
-    txHash,
-    openedAt: pos.openedAt,
-    closedAt: new Date(),
-  };
-
-  untrackPosition(pos.coin);
-  bus.emit("auto-trade:close", event);
-
-  const emoji = pnlUsd >= 0 ? "+" : "";
-  console.log(
-    `[auto-checker] CLOSED ${pos.coin} ${status} @ $${exitPrice.toFixed(2)} PnL: ${emoji}$${pnlUsd.toFixed(2)} (${emoji}${pnlPct.toFixed(1)}%) ${txHash}`,
-  );
+  emitCloseEvent(pos, status, exitPrice, txHash, bus);
 }
 
 /**
@@ -172,6 +195,32 @@ async function closePosition(
  */
 async function restorePositions(config: AutoTraderConfig): Promise<void> {
   try {
+    if (config.exchange === "grvt") {
+      const { fetchGrvtPositions } = await import("./grvt-executor.js");
+      const positions = await fetchGrvtPositions(config);
+
+      for (const pos of positions) {
+        if (!config.coins.includes(pos.coin.toUpperCase())) continue;
+        if (tracked.has(pos.coin)) continue;
+
+        trackPosition(
+          pos.coin,
+          pos.direction,
+          pos.entryPrice,
+          pos.quantity,
+          config.tpPct,
+          config.slPct,
+          config.maxHoldH,
+        );
+        console.log(
+          `[auto-checker] restored ${pos.coin} ${pos.direction} entry=$${pos.entryPrice.toFixed(2)} qty=${pos.quantity}`,
+        );
+      }
+
+      console.log(`[auto-checker] restored ${tracked.size} position(s) from GRVT`);
+      return;
+    }
+
     const transport = new HttpTransport({
       isTestnet: config.network === "testnet",
     });
@@ -245,14 +294,29 @@ async function checkAll(config: AutoTraderConfig, bus: EventBus): Promise<void> 
   if (tracked.size === 0) return;
 
   try {
-    const transport = new HttpTransport({
-      isTestnet: config.network === "testnet",
-    });
-    const mids = await allMids({ transport });
+    // Fetch current prices from the exchange we're trading on
+    const prices = new Map<string, number>();
+    if (config.exchange === "grvt") {
+      const { fetchGrvtMidPrice } = await import("./grvt-executor.js");
+      for (const coin of tracked.keys()) {
+        try {
+          prices.set(coin, await fetchGrvtMidPrice(config, coin));
+        } catch (err) {
+          console.error(`[auto-checker] GRVT price fetch failed for ${coin}:`, err instanceof Error ? err.message : err);
+        }
+      }
+    } else {
+      const transport = new HttpTransport({
+        isTestnet: config.network === "testnet",
+      });
+      const mids = await allMids({ transport });
+      for (const coin of tracked.keys()) prices.set(coin, Number(mids[coin]));
+    }
+
     const now = new Date();
 
     for (const [coin, pos] of tracked) {
-      const currentPrice = Number(mids[coin]);
+      const currentPrice = prices.get(coin) ?? 0;
       if (!currentPrice || currentPrice <= 0) continue;
 
       let status: AutoTradeCloseEvent["status"] | null = null;
