@@ -79,6 +79,7 @@ type GrvtInstrument = {
   base_decimals: number;
   tick_size: string;
   min_size: string;
+  min_notional?: string;
 };
 
 let instrumentsCache: Map<string, GrvtInstrument> | null = null;
@@ -182,7 +183,24 @@ async function placeIocOrder(
 
   const slippageMult = side === "buy" ? 1 + config.slippage : 1 - config.slippage;
   const limitPrice = roundToTick(referencePrice * slippageMult, inst.tick_size);
-  const qtyStr = roundQty(quantity, inst.min_size);
+  let qtyStr = roundQty(quantity, inst.min_size);
+
+  // GRVT enforces a minimum order notional (e.g. BTC $100, ETH $20).
+  // For opening orders, bump the quantity up to the next size step that
+  // satisfies it. Never bump reduce-only closes (must not exceed position).
+  const minNotional = Number(inst.min_notional ?? 0);
+  if (!reduceOnly && minNotional > 0) {
+    const worstPrice = Math.min(limitPrice, referencePrice);
+    if (Number(qtyStr) * worstPrice < minNotional) {
+      const step = Number(inst.min_size);
+      const bumped = Math.ceil((minNotional * 1.01) / worstPrice / step) * step;
+      const bumpedStr = bumped.toFixed(decimalsOf(inst.min_size));
+      console.warn(
+        `[auto-trader] GRVT ${symbol}: qty ${qtyStr} below min notional $${minNotional}, bumping to ${bumpedStr}`,
+      );
+      qtyStr = bumpedStr;
+    }
+  }
 
   if (Number(qtyStr) <= 0) {
     throw new Error(`Quantity ${quantity} below GRVT min size ${inst.min_size} for ${symbol}`);
