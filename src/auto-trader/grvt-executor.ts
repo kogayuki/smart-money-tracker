@@ -393,8 +393,83 @@ export async function fetchGrvtMidPrice(
   return fetchMidPriceBySymbol(config, toGrvtSymbol(coin));
 }
 
-export async function setupGrvtLeverage(
-  _config: AutoTraderConfig,
-): Promise<void> {
-  console.log(`[auto-trader] GRVT: leverage configured via GRVT dashboard (not per-API)`);
+const EIP712_POSITION_CONFIG_TYPES = {
+  SetSubAccountPositionMarginConfig: [
+    { name: "subAccountID", type: "uint64" },
+    { name: "asset", type: "uint256" },
+    { name: "marginType", type: "uint8" },
+    { name: "leverage", type: "int32" },
+    { name: "nonce", type: "uint32" },
+    { name: "expiration", type: "int64" },
+  ],
+} as const;
+
+/**
+ * Enforce CROSS margin + configured leverage for every traded instrument.
+ *
+ * Critical: if an instrument is left in ISOLATED mode (e.g. from manual UI
+ * trading), positions only get ~2% collateral allocated and are force-
+ * liquidated by GRVT after a ~1% adverse move — this happened on 2026-07-06
+ * (BTC short liquidated at +1.0% with $919 idle in the account, 0.7% liq fee).
+ */
+export async function setupGrvtLeverage(config: AutoTraderConfig): Promise<void> {
+  const { trades, chainId } = endpoints(config);
+  const leverage = Math.min(50, Math.max(1, Math.round(config.leverage)));
+
+  const current = (await authedPost(config, `${trades}/full/v1/get_all_initial_leverage`, {
+    sub_account_id: config.grvtTradingAccountId,
+  })) as { results?: { instrument: string; leverage: string; margin_type: string }[] };
+
+  for (const coin of config.coins) {
+    const symbol = toGrvtSymbol(coin);
+    try {
+      const existing = current.results?.find((r) => r.instrument === symbol);
+      if (existing && existing.margin_type === "CROSS" && Number(existing.leverage) === leverage) {
+        console.log(`[auto-trader] GRVT ${symbol}: already CROSS/${leverage}x`);
+        continue;
+      }
+
+      const inst = await getInstrument(config, symbol);
+      const wallet = getAccount(config);
+      const expiration = BigInt(Date.now() + 24 * 60 * 60 * 1000) * BigInt(1000000);
+      const nonce = Math.floor(Math.random() * 4294967295) + 1;
+
+      const signature = await wallet.signTypedData({
+        domain: { name: "GRVT Exchange", version: "0", chainId },
+        types: EIP712_POSITION_CONFIG_TYPES,
+        primaryType: "SetSubAccountPositionMarginConfig",
+        message: {
+          subAccountID: BigInt(config.grvtTradingAccountId),
+          asset: BigInt(inst.instrument_hash),
+          marginType: 2, // CROSS
+          leverage: leverage * 1000000,
+          nonce,
+          expiration,
+        },
+      });
+
+      await authedPost(config, `${trades}/full/v1/set_position_config`, {
+        sub_account_id: config.grvtTradingAccountId,
+        instrument: symbol,
+        margin_type: "CROSS",
+        leverage: String(leverage),
+        signature: {
+          signer: wallet.address.toLowerCase(),
+          r: `0x${signature.slice(2, 66)}`,
+          s: `0x${signature.slice(66, 130)}`,
+          v: parseInt(signature.slice(130, 132), 16),
+          expiration: expiration.toString(),
+          nonce,
+        },
+      });
+      console.log(
+        `[auto-trader] GRVT ${symbol}: set to CROSS/${leverage}x (was ${existing ? `${existing.margin_type}/${Number(existing.leverage)}x` : "unknown"})`,
+      );
+    } catch (err) {
+      // Margin type cannot be changed while a position is open — don't block startup.
+      console.error(
+        `[auto-trader] GRVT ${symbol}: failed to set CROSS/${leverage}x — ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
 }
