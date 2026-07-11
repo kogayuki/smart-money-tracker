@@ -7,7 +7,7 @@ import { notifyDiscord } from "../notify.js";
 export function startAutoTradeNotifier(bus: EventBus): void {
   bus.on("auto-trade:open", (event) => {
     const lines = [
-      `🤖 **AUTO-TRADE EXECUTED**`,
+      `🤖 **AUTO-TRADE EXECUTED** [${event.exchange.toUpperCase()}]`,
       `**${event.coin}** ${event.direction.toUpperCase()} @ $${event.executionPrice}`,
       `Qty: ${event.quantity} | Margin: $${event.margin} | Lev: ${event.leverage}x`,
       `Signal: ${event.signalType} (conf: ${(event.signalConfidence * 100).toFixed(0)}%)`,
@@ -22,7 +22,7 @@ export function startAutoTradeNotifier(bus: EventBus): void {
     const sign = event.pnlUsd >= 0 ? "+" : "";
     const statusLabel = event.status === "closed_tp" ? "TP利確" : event.status === "closed_sl" ? "SL損切" : "タイムアウト";
     const lines = [
-      `${emoji} **AUTO-TRADE CLOSED (${statusLabel})**`,
+      `${emoji} **AUTO-TRADE CLOSED (${statusLabel})** [${event.exchange.toUpperCase()}]`,
       `**${event.coin}** ${event.direction.toUpperCase()}`,
       `Entry: $${event.entryPrice.toFixed(2)} → Exit: $${event.exitPrice.toFixed(2)}`,
       `PnL: **${sign}$${event.pnlUsd.toFixed(2)}** (${sign}${event.pnlPct.toFixed(1)}%)`,
@@ -33,7 +33,7 @@ export function startAutoTradeNotifier(bus: EventBus): void {
 
   bus.on("auto-trade:error", (event) => {
     const lines = [
-      `⚠️ **AUTO-TRADE FAILED**`,
+      `⚠️ **AUTO-TRADE FAILED** [${event.exchange.toUpperCase()}]`,
       `**${event.coin}** ${event.direction.toUpperCase()}`,
       `Signal: ${event.signalId}`,
       `Error: ${event.error}`,

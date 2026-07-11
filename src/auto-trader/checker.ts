@@ -1,19 +1,21 @@
 /**
- * Auto-Trade Checker: monitors open Hyperliquid positions and closes them
+ * Auto-Trade Checker: monitors open positions and closes them
  * when TP, SL, or timeout conditions are met.
  *
- * Runs every 30 seconds. No DB dependency — reads positions directly from Hyperliquid.
+ * Runs every 30 seconds per exchange. No DB dependency — positions are tracked
+ * in memory and restored from the exchange on startup.
  */
 import { HttpTransport } from "@nktkas/hyperliquid";
 import { order } from "@nktkas/hyperliquid/api/exchange";
 import { clearinghouseState, allMids, meta } from "@nktkas/hyperliquid/api/info";
 import { privateKeyToAccount } from "viem/accounts";
 import type { EventBus, AutoTradeCloseEvent } from "../events/bus.js";
-import { loadAutoTraderConfig, type AutoTraderConfig } from "./config.js";
+import { loadAutoTraderConfigs, type AutoTraderConfig } from "./config.js";
 
 const CHECK_INTERVAL_MS = 30_000;
 
 type TrackedPosition = {
+  exchange: string;
   coin: string;
   direction: "long" | "short";
   entryPrice: number;
@@ -24,11 +26,16 @@ type TrackedPosition = {
   openedAt: Date;
 };
 
-// In-memory tracking of positions opened by auto-trader
+// In-memory tracking of positions opened by auto-trader, keyed by "exchange:coin"
 const tracked = new Map<string, TrackedPosition>();
+
+function keyOf(exchange: string, coin: string): string {
+  return `${exchange}:${coin}`;
+}
 
 /** Called by engine.ts when a new position is opened */
 export function trackPosition(
+  exchange: string,
   coin: string,
   direction: "long" | "short",
   entryPrice: number,
@@ -49,7 +56,8 @@ export function trackPosition(
     slPrice = entryPrice * (1 + slPct / 100);
   }
 
-  tracked.set(coin, {
+  tracked.set(keyOf(exchange, coin), {
+    exchange,
     coin,
     direction,
     entryPrice,
@@ -61,13 +69,13 @@ export function trackPosition(
   });
 
   console.log(
-    `[auto-checker] tracking ${coin} ${direction} entry=$${entryPrice.toFixed(2)} TP=$${tpPrice.toFixed(2)} SL=$${slPrice.toFixed(2)} timeout=${maxHoldH}h`,
+    `[auto-checker] tracking ${exchange}:${coin} ${direction} entry=$${entryPrice.toFixed(2)} TP=$${tpPrice.toFixed(2)} SL=$${slPrice.toFixed(2)} timeout=${maxHoldH}h`,
   );
 }
 
 /** Remove tracking when position is closed */
-export function untrackPosition(coin: string): void {
-  tracked.delete(coin);
+export function untrackPosition(exchange: string, coin: string): void {
+  tracked.delete(keyOf(exchange, coin));
 }
 
 export function getTrackedPositions(): ReadonlyMap<string, TrackedPosition> {
@@ -102,7 +110,8 @@ function emitCloseEvent(
   const pnlUsd = (pnlPct / 100) * notional;
 
   const event: AutoTradeCloseEvent = {
-    id: `atc_${pos.coin}_${Date.now()}`,
+    id: `atc_${pos.exchange}_${pos.coin}_${Date.now()}`,
+    exchange: pos.exchange,
     coin: pos.coin,
     direction: pos.direction,
     entryPrice: pos.entryPrice,
@@ -116,12 +125,12 @@ function emitCloseEvent(
     closedAt: new Date(),
   };
 
-  untrackPosition(pos.coin);
+  untrackPosition(pos.exchange, pos.coin);
   bus.emit("auto-trade:close", event);
 
   const emoji = pnlUsd >= 0 ? "+" : "";
   console.log(
-    `[auto-checker] CLOSED ${pos.coin} ${status} @ $${exitPrice.toFixed(2)} PnL: ${emoji}$${pnlUsd.toFixed(2)} (${emoji}${pnlPct.toFixed(1)}%) ${txHash}`,
+    `[auto-checker] CLOSED ${pos.exchange}:${pos.coin} ${status} @ $${exitPrice.toFixed(2)} PnL: ${emoji}$${pnlUsd.toFixed(2)} (${emoji}${pnlPct.toFixed(1)}%) ${txHash}`,
   );
 }
 
@@ -190,7 +199,7 @@ async function closePosition(
 }
 
 /**
- * Restore tracked positions from Hyperliquid on startup.
+ * Restore tracked positions from the exchange on startup.
  * This ensures TP/SL/timeout continues to work after a restart.
  */
 async function restorePositions(config: AutoTraderConfig): Promise<void> {
@@ -198,12 +207,14 @@ async function restorePositions(config: AutoTraderConfig): Promise<void> {
     if (config.exchange === "grvt") {
       const { fetchGrvtPositions } = await import("./grvt-executor.js");
       const positions = await fetchGrvtPositions(config);
+      let restored = 0;
 
       for (const pos of positions) {
         if (!config.coins.includes(pos.coin.toUpperCase())) continue;
-        if (tracked.has(pos.coin)) continue;
+        if (tracked.has(keyOf(config.exchange, pos.coin))) continue;
 
         trackPosition(
+          config.exchange,
           pos.coin,
           pos.direction,
           pos.entryPrice,
@@ -212,12 +223,13 @@ async function restorePositions(config: AutoTraderConfig): Promise<void> {
           config.slPct,
           config.maxHoldH,
         );
+        restored++;
         console.log(
           `[auto-checker] restored ${pos.coin} ${pos.direction} entry=$${pos.entryPrice.toFixed(2)} qty=${pos.quantity}`,
         );
       }
 
-      console.log(`[auto-checker] restored ${tracked.size} position(s) from GRVT`);
+      console.log(`[auto-checker] restored ${restored} position(s) from GRVT`);
       return;
     }
 
@@ -228,10 +240,11 @@ async function restorePositions(config: AutoTraderConfig): Promise<void> {
     const state = await clearinghouseState({ transport }, { user: wallet.address });
 
     if (state.assetPositions.length === 0) {
-      console.log("[auto-checker] no existing positions to restore");
+      console.log("[auto-checker] no existing Hyperliquid positions to restore");
       return;
     }
 
+    let restored = 0;
     for (const ap of state.assetPositions) {
       const pos = ap.position;
       const coin = pos.coin;
@@ -242,7 +255,7 @@ async function restorePositions(config: AutoTraderConfig): Promise<void> {
       if (!config.coins.includes(coin.toUpperCase())) continue;
 
       // Skip if already tracked (shouldn't happen on startup, but safety check)
-      if (tracked.has(coin)) continue;
+      if (tracked.has(keyOf(config.exchange, coin))) continue;
 
       const direction: "long" | "short" = size > 0 ? "long" : "short";
       const entryPrice = Number(pos.entryPx);
@@ -250,6 +263,7 @@ async function restorePositions(config: AutoTraderConfig): Promise<void> {
 
       // Reconstruct TP/SL from config
       trackPosition(
+        config.exchange,
         coin,
         direction,
         entryPrice,
@@ -259,50 +273,59 @@ async function restorePositions(config: AutoTraderConfig): Promise<void> {
         config.maxHoldH,
       );
 
+      restored++;
       console.log(
         `[auto-checker] restored ${coin} ${direction} entry=$${entryPrice.toFixed(2)} qty=${quantity}`,
       );
     }
 
-    console.log(`[auto-checker] restored ${tracked.size} position(s) from Hyperliquid`);
+    console.log(`[auto-checker] restored ${restored} position(s) from Hyperliquid`);
   } catch (err) {
-    console.error("[auto-checker] restore failed:", err instanceof Error ? err.message : err);
+    console.error(`[auto-checker] restore failed for ${config.exchange}:`, err instanceof Error ? err.message : err);
   }
 }
 
 export function startAutoTradeChecker(bus: EventBus): () => void {
-  const config = loadAutoTraderConfig();
+  const configs = loadAutoTraderConfigs().filter(
+    (c) => c.enabled && c.privateKey && (c.exchange === "hyperliquid" || c.exchange === "grvt"),
+  );
 
-  if (!config.enabled || !config.privateKey) {
+  if (configs.length === 0) {
     console.log("[auto-checker] disabled");
     return () => {};
   }
 
-  // Restore existing positions from Hyperliquid (survives restart)
-  void restorePositions(config);
+  const intervals: NodeJS.Timeout[] = [];
+  for (const config of configs) {
+    // Restore existing positions from the exchange (survives restart)
+    void restorePositions(config);
 
-  const interval = setInterval(() => void checkAll(config, bus), CHECK_INTERVAL_MS);
-  console.log(`[auto-checker] started (${CHECK_INTERVAL_MS / 1000}s interval, TP=${config.tpPct}% SL=${config.slPct}% timeout=${config.maxHoldH}h)`);
+    intervals.push(setInterval(() => void checkAll(config, bus), CHECK_INTERVAL_MS));
+    console.log(
+      `[auto-checker] started ${config.exchange} (${CHECK_INTERVAL_MS / 1000}s interval, TP=${config.tpPct}% SL=${config.slPct}% timeout=${config.maxHoldH}h)`,
+    );
+  }
 
   return () => {
-    clearInterval(interval);
+    for (const interval of intervals) clearInterval(interval);
     console.log("[auto-checker] stopped");
   };
 }
 
 async function checkAll(config: AutoTraderConfig, bus: EventBus): Promise<void> {
-  if (tracked.size === 0) return;
+  const positions = [...tracked.values()].filter((p) => p.exchange === config.exchange);
+  if (positions.length === 0) return;
 
   try {
     // Fetch current prices from the exchange we're trading on
     const prices = new Map<string, number>();
     if (config.exchange === "grvt") {
       const { fetchGrvtMidPrice } = await import("./grvt-executor.js");
-      for (const coin of tracked.keys()) {
+      for (const pos of positions) {
         try {
-          prices.set(coin, await fetchGrvtMidPrice(config, coin));
+          prices.set(pos.coin, await fetchGrvtMidPrice(config, pos.coin));
         } catch (err) {
-          console.error(`[auto-checker] GRVT price fetch failed for ${coin}:`, err instanceof Error ? err.message : err);
+          console.error(`[auto-checker] GRVT price fetch failed for ${pos.coin}:`, err instanceof Error ? err.message : err);
         }
       }
     } else {
@@ -310,13 +333,13 @@ async function checkAll(config: AutoTraderConfig, bus: EventBus): Promise<void> 
         isTestnet: config.network === "testnet",
       });
       const mids = await allMids({ transport });
-      for (const coin of tracked.keys()) prices.set(coin, Number(mids[coin]));
+      for (const pos of positions) prices.set(pos.coin, Number(mids[pos.coin]));
     }
 
     const now = new Date();
 
-    for (const [coin, pos] of tracked) {
-      const currentPrice = prices.get(coin) ?? 0;
+    for (const pos of positions) {
+      const currentPrice = prices.get(pos.coin) ?? 0;
       if (!currentPrice || currentPrice <= 0) continue;
 
       let status: AutoTradeCloseEvent["status"] | null = null;
@@ -335,15 +358,15 @@ async function checkAll(config: AutoTraderConfig, bus: EventBus): Promise<void> 
 
       if (!status) continue;
 
-      console.log(`[auto-checker] ${coin} triggered ${status} (price=$${currentPrice.toFixed(2)} TP=$${pos.tpPrice.toFixed(2)} SL=$${pos.slPrice.toFixed(2)})`);
+      console.log(`[auto-checker] ${pos.exchange}:${pos.coin} triggered ${status} (price=$${currentPrice.toFixed(2)} TP=$${pos.tpPrice.toFixed(2)} SL=$${pos.slPrice.toFixed(2)})`);
 
       try {
         await closePosition(config, pos, status, currentPrice, bus);
       } catch (err) {
-        console.error(`[auto-checker] close failed for ${coin}:`, err instanceof Error ? err.message : err);
+        console.error(`[auto-checker] close failed for ${pos.exchange}:${pos.coin}:`, err instanceof Error ? err.message : err);
       }
     }
   } catch (err) {
-    console.error("[auto-checker] check error:", err instanceof Error ? err.message : err);
+    console.error(`[auto-checker] check error (${config.exchange}):`, err instanceof Error ? err.message : err);
   }
 }

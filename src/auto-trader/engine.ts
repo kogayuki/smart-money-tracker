@@ -1,6 +1,9 @@
 /**
  * Auto-Trader Engine: listens to signal:detected events and executes
- * real trades on Hyperliquid (or Injective).
+ * real trades on the configured exchange(s).
+ *
+ * Supports multiple exchanges in parallel (AUTO_TRADER_EXCHANGES=grvt,hyperliquid),
+ * each with its own position tracking, cooldowns, and per-exchange config overrides.
  *
  * Safety controls: enabled flag, confidence threshold, max positions, coin filter.
  */
@@ -9,16 +12,9 @@ import { order } from "@nktkas/hyperliquid/api/exchange";
 import { allMids, meta } from "@nktkas/hyperliquid/api/info";
 import { privateKeyToAccount } from "viem/accounts";
 import type { EventBus, SignalDetectedEvent, AutoTradeOpenEvent } from "../events/bus.js";
-import { getPrice } from "../signal/price-cache.js";
-import { loadAutoTraderConfig, type AutoTraderConfig } from "./config.js";
-import { trackPosition, untrackPosition } from "./checker.js";
+import { loadAutoTraderConfigs, type AutoTraderConfig } from "./config.js";
+import { trackPosition } from "./checker.js";
 
-// ── State ──
-
-const openPositions = new Set<string>();
-
-/** Cooldown: coin:direction → cooldown expiry timestamp */
-const cooldowns = new Map<string, number>();
 const COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
 
 type AssetInfo = { index: number; szDecimals: number };
@@ -133,18 +129,48 @@ async function executeHyperliquidTrade(
   return { txHash: "hl_unknown", executionPrice: priceStr, quantity: qtyStr };
 }
 
-// ── Public API ──
+// ── Hyperliquid startup: leverage + position restore ──
 
-export async function startAutoTrader(bus: EventBus): Promise<void> {
-  const config = loadAutoTraderConfig();
+async function setupHyperliquid(config: AutoTraderConfig, openPositions: Set<string>): Promise<void> {
+  const transport = new HttpTransport({
+    isTestnet: config.network === "testnet",
+  });
+  const wallet = privateKeyToAccount(config.privateKey as `0x${string}`);
+  const assets = await loadAssetMap(transport);
 
-  if (!config.enabled) {
-    console.log("[auto-trader] disabled (AUTO_TRADER_ENABLED != true)");
-    return;
+  const { updateLeverage } = await import("@nktkas/hyperliquid/api/exchange");
+  for (const coin of config.coins) {
+    const info = assets.get(coin);
+    if (!info) continue;
+    try {
+      await updateLeverage(
+        { transport, wallet },
+        { asset: info.index, isCross: true, leverage: config.leverage },
+      );
+      console.log(`[auto-trader] leverage set: ${coin} ${config.leverage}x cross`);
+    } catch (e) {
+      console.warn(`[auto-trader] leverage set failed for ${coin}:`, e instanceof Error ? e.message : e);
+    }
   }
+  // Restore openPositions from existing Hyperliquid positions
+  const state = await (await import("@nktkas/hyperliquid/api/info")).clearinghouseState(
+    { transport }, { user: wallet.address },
+  );
+  for (const ap of state.assetPositions) {
+    if (Number(ap.position.szi) !== 0 && config.coins.includes(ap.position.coin.toUpperCase())) {
+      openPositions.add(ap.position.coin);
+    }
+  }
+  if (openPositions.size > 0) {
+    console.log(`[auto-trader] restored openPositions (hyperliquid): ${[...openPositions].join(", ")}`);
+  }
+}
 
+// ── Per-exchange instance ──
+
+async function startAutoTraderInstance(bus: EventBus, config: AutoTraderConfig): Promise<void> {
   if (!config.privateKey) {
-    console.error("[auto-trader] ERROR: AUTO_TRADER_PRIVATE_KEY is required. Disabling.");
+    console.error(`[auto-trader] ERROR: private key required for ${config.exchange}. Disabling.`);
     return;
   }
 
@@ -153,80 +179,63 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
     return;
   }
 
-  // Set leverage on startup (Hyperliquid) or log (GRVT)
-  if (config.exchange === "grvt") {
-    const { setupGrvtLeverage } = await import("./grvt-executor.js");
-    await setupGrvtLeverage(config);
-  }
+  // Per-instance state
+  const openPositions = new Set<string>();
+  /** Cooldown: coin:direction → cooldown expiry timestamp */
+  const cooldowns = new Map<string, number>();
 
+  // Set leverage on startup + restore existing positions
   try {
-    if (config.exchange !== "hyperliquid") throw new Error("skip HL setup");
-    const transport = new HttpTransport({
-      isTestnet: config.network === "testnet",
-    });
-    const wallet = privateKeyToAccount(config.privateKey as `0x${string}`);
-    const assets = await loadAssetMap(transport);
-
-    const { updateLeverage } = await import("@nktkas/hyperliquid/api/exchange");
-    for (const coin of config.coins) {
-      const info = assets.get(coin);
-      if (!info) continue;
-      try {
-        await updateLeverage(
-          { transport, wallet },
-          { asset: info.index, isCross: true, leverage: config.leverage },
-        );
-        console.log(`[auto-trader] leverage set: ${coin} ${config.leverage}x cross`);
-      } catch (e) {
-        console.warn(`[auto-trader] leverage set failed for ${coin}:`, e instanceof Error ? e.message : e);
+    if (config.exchange === "grvt") {
+      const { setupGrvtLeverage } = await import("./grvt-executor.js");
+      await setupGrvtLeverage(config);
+      const { fetchGrvtPositions } = await import("./grvt-executor.js");
+      for (const pos of await fetchGrvtPositions(config)) {
+        if (config.coins.includes(pos.coin.toUpperCase())) openPositions.add(pos.coin);
       }
-    }
-    // Restore openPositions from existing Hyperliquid positions
-    const state = await (await import("@nktkas/hyperliquid/api/info")).clearinghouseState(
-      { transport }, { user: wallet.address },
-    );
-    for (const ap of state.assetPositions) {
-      if (Number(ap.position.szi) !== 0 && config.coins.includes(ap.position.coin.toUpperCase())) {
-        openPositions.add(ap.position.coin);
+      if (openPositions.size > 0) {
+        console.log(`[auto-trader] restored openPositions (grvt): ${[...openPositions].join(", ")}`);
       }
-    }
-    if (openPositions.size > 0) {
-      console.log(`[auto-trader] restored openPositions: ${[...openPositions].join(", ")}`);
+    } else {
+      await setupHyperliquid(config, openPositions);
     }
   } catch (e) {
-    console.warn("[auto-trader] startup error:", e instanceof Error ? e.message : e);
+    console.warn(`[auto-trader] ${config.exchange} startup error:`, e instanceof Error ? e.message : e);
   }
 
   // Clear openPositions when auto-trade:close fires + set cooldown on SL
   bus.on("auto-trade:close", (event) => {
+    if (event.exchange !== config.exchange) return;
     openPositions.delete(event.coin);
     if (event.status === "closed_sl") {
       const key = `${event.coin}:${event.direction}`;
       const expiry = Date.now() + COOLDOWN_MS;
       cooldowns.set(key, expiry);
-      console.log(`[auto-trader] cooldown set: ${key} for 4h (until ${new Date(expiry).toISOString()})`);
+      console.log(`[auto-trader] ${config.exchange} cooldown set: ${key} for 4h (until ${new Date(expiry).toISOString()})`);
     }
   });
 
   bus.on("signal:detected", (signal) => {
+    const tag = `${config.exchange}:${signal.coin}`;
+
     // 1. Coin filter
     if (!config.coins.includes(signal.coin.toUpperCase())) return;
 
     // 2. Signal type filter
     if (!config.signalTypes.includes(signal.type)) {
-      console.log(`[auto-trader] skip ${signal.coin} — type ${signal.type} not in [${config.signalTypes}]`);
+      console.log(`[auto-trader] skip ${tag} — type ${signal.type} not in [${config.signalTypes}]`);
       return;
     }
 
     // 2b. Direction filter
     if (!config.directions.includes(signal.direction)) {
-      console.log(`[auto-trader] skip ${signal.coin} — direction ${signal.direction} not in [${config.directions}]`);
+      console.log(`[auto-trader] skip ${tag} — direction ${signal.direction} not in [${config.directions}]`);
       return;
     }
 
     // 3. Confidence check
     if (signal.confidence < config.minConfidence) {
-      console.log(`[auto-trader] skip ${signal.coin} — confidence ${signal.confidence} < ${config.minConfidence}`);
+      console.log(`[auto-trader] skip ${tag} — confidence ${signal.confidence} < ${config.minConfidence}`);
       return;
     }
 
@@ -235,20 +244,20 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
     const cooldownExpiry = cooldowns.get(cooldownKey);
     if (cooldownExpiry && Date.now() < cooldownExpiry) {
       const remainMin = Math.round((cooldownExpiry - Date.now()) / 60000);
-      console.log(`[auto-trader] skip ${signal.coin} ${signal.direction} — cooldown (${remainMin}min remaining)`);
+      console.log(`[auto-trader] skip ${tag} ${signal.direction} — cooldown (${remainMin}min remaining)`);
       return;
     }
     if (cooldownExpiry) cooldowns.delete(cooldownKey); // expired, clean up
 
     // 5. Max positions check
     if (openPositions.size >= config.maxPositions) {
-      console.log(`[auto-trader] skip ${signal.coin} — max positions (${openPositions.size}/${config.maxPositions})`);
+      console.log(`[auto-trader] skip ${tag} — max positions (${openPositions.size}/${config.maxPositions})`);
       return;
     }
 
     // 6. Duplicate check
     if (openPositions.has(signal.coin)) {
-      console.log(`[auto-trader] skip ${signal.coin} — already open`);
+      console.log(`[auto-trader] skip ${tag} — already open`);
       return;
     }
 
@@ -265,6 +274,7 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
 
         // Track for TP/SL/timeout checker
         trackPosition(
+          config.exchange,
           signal.coin,
           signal.direction,
           Number(result.executionPrice),
@@ -275,7 +285,8 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
         );
 
         const event: AutoTradeOpenEvent = {
-          id: `at_${signal.id}`,
+          id: `at_${config.exchange}_${signal.id}`,
+          exchange: config.exchange,
           signalId: signal.id,
           coin: signal.coin,
           direction: signal.direction,
@@ -292,13 +303,14 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
 
         bus.emit("auto-trade:open", event);
         console.log(
-          `[auto-trader] FILLED ${signal.coin} ${signal.direction} @ $${result.executionPrice} qty=${result.quantity} ${result.txHash}`,
+          `[auto-trader] FILLED ${config.exchange} ${signal.coin} ${signal.direction} @ $${result.executionPrice} qty=${result.quantity} ${result.txHash}`,
         );
       })
       .catch((err) => {
         const errorMsg = err instanceof Error ? err.message : String(err);
-        console.error(`[auto-trader] FAILED ${signal.coin} ${signal.direction}:`, errorMsg);
+        console.error(`[auto-trader] FAILED ${config.exchange} ${signal.coin} ${signal.direction}:`, errorMsg);
         bus.emit("auto-trade:error", {
+          exchange: config.exchange,
           signalId: signal.id,
           coin: signal.coin,
           direction: signal.direction,
@@ -309,6 +321,21 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
   });
 
   console.log(
-    `[auto-trader] started — exchange=${config.exchange} network=${config.network} coins=${config.coins.join(",")} size=$${config.positionSizeUsd} lev=${config.leverage}x minConf=${config.minConfidence} maxPos=${config.maxPositions}`,
+    `[auto-trader] started — exchange=${config.exchange} network=${config.network} coins=${config.coins.join(",")} size=$${config.positionSizeUsd} lev=${config.leverage}x minConf=${config.minConfidence} maxPos=${config.maxPositions} dirs=${config.directions.join(",")}`,
   );
+}
+
+// ── Public API ──
+
+export async function startAutoTrader(bus: EventBus): Promise<void> {
+  const configs = loadAutoTraderConfigs();
+
+  if (!configs[0]?.enabled) {
+    console.log("[auto-trader] disabled (AUTO_TRADER_ENABLED != true)");
+    return;
+  }
+
+  for (const config of configs) {
+    await startAutoTraderInstance(bus, config);
+  }
 }

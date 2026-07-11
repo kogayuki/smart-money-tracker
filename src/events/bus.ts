@@ -97,6 +97,8 @@ export type PaperTradeCloseEvent = {
 
 export type AutoTradeOpenEvent = {
   id: string;
+  /** Exchange the trade was executed on ("hyperliquid" | "grvt" | "injective") */
+  exchange: string;
   signalId: string;
   coin: string;
   direction: "long" | "short";
@@ -113,6 +115,7 @@ export type AutoTradeOpenEvent = {
 
 export type AutoTradeCloseEvent = {
   id: string;
+  exchange: string;
   coin: string;
   direction: "long" | "short";
   entryPrice: number;
@@ -127,6 +130,7 @@ export type AutoTradeCloseEvent = {
 };
 
 export type AutoTradeErrorEvent = {
+  exchange: string;
   signalId: string;
   coin: string;
   direction: "long" | "short";

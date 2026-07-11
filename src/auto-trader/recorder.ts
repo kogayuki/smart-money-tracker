@@ -15,11 +15,11 @@ export function startAutoTradeRecorder(bus: EventBus): void {
     try {
       await sql`
         INSERT INTO auto_trades (
-          id, signal_id, coin, direction, tx_hash,
+          id, exchange, signal_id, coin, direction, tx_hash,
           execution_price, quantity, margin, leverage,
           fee_recipient, signal_type, signal_confidence, opened_at
         ) VALUES (
-          ${event.id}, ${event.signalId}, ${event.coin}, ${event.direction}, ${event.txHash},
+          ${event.id}, ${event.exchange}, ${event.signalId}, ${event.coin}, ${event.direction}, ${event.txHash},
           ${event.executionPrice}, ${event.quantity}, ${event.margin}, ${event.leverage},
           ${event.feeRecipient}, ${event.signalType}, ${event.signalConfidence}, ${event.openedAt.toISOString()}
         )
