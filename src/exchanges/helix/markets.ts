@@ -10,18 +10,24 @@ import { IndexerGrpcDerivativesApi } from "@injectivelabs/sdk-ts";
 
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
+export type HelixMarketInfo = {
+  coin: string;
+  /** Indexer prices are scaled by 10^quoteDecimals (USDT = 6) */
+  quoteDecimals: number;
+};
+
 export async function buildMarketMap(
   indexerEndpoint: string,
-): Promise<Map<string, string>> {
+): Promise<Map<string, HelixMarketInfo>> {
   const api = new IndexerGrpcDerivativesApi(indexerEndpoint);
   const markets = await api.fetchMarkets();
 
-  const map = new Map<string, string>();
+  const map = new Map<string, HelixMarketInfo>();
   for (const m of markets) {
     // "BTC/USDT PERP" → "BTC"
     const coin = m.ticker.split("/")[0]?.trim();
     if (coin) {
-      map.set(m.marketId, coin);
+      map.set(m.marketId, { coin, quoteDecimals: m.quoteToken?.decimals ?? 6 });
     }
   }
 
@@ -36,11 +42,11 @@ export async function buildMarketMap(
 export function startMarketMapRefresh(
   indexerEndpoint: string,
 ): {
-  getMarketMap: () => Map<string, string>;
+  getMarketMap: () => Map<string, HelixMarketInfo>;
   refresh: () => Promise<void>;
   stop: () => void;
 } {
-  let marketMap = new Map<string, string>();
+  let marketMap = new Map<string, HelixMarketInfo>();
 
   const refresh = async () => {
     try {

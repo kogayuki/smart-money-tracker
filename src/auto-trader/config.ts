@@ -12,6 +12,8 @@ export type AutoTraderConfig = {
   coins: string[];
   /** Signal types to act on */
   signalTypes: string[];
+  /** Directions to act on ("long", "short") */
+  directions: string[];
   /** Notional amount per trade in USD */
   positionSizeUsd: number;
   /** Leverage multiplier */
@@ -58,6 +60,7 @@ export function loadAutoTraderConfig(): AutoTraderConfig {
     privateKey: process.env.AUTO_TRADER_PRIVATE_KEY ?? "",
     coins: (process.env.AUTO_TRADER_COINS ?? "BTC,ETH").split(",").map((s) => s.trim().toUpperCase()),
     signalTypes: (process.env.AUTO_TRADER_SIGNAL_TYPES ?? "flow_shift,confluence").split(",").map((s) => s.trim()),
+    directions: (process.env.AUTO_TRADER_DIRECTIONS ?? "long,short").split(",").map((s) => s.trim().toLowerCase()),
     positionSizeUsd: Number(process.env.AUTO_TRADER_POSITION_SIZE_USD ?? "10"),
     leverage: Number(process.env.AUTO_TRADER_LEVERAGE ?? "5"),
     slippage: Number(process.env.AUTO_TRADER_SLIPPAGE ?? "0.02"),

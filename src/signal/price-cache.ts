@@ -44,16 +44,16 @@ async function startHelixPrices(): Promise<() => void> {
   const indexerEndpoint = process.env.INJECTIVE_INDEXER_URL ?? endpoints.indexer;
   const api = new IndexerGrpcDerivativesApi(indexerEndpoint);
 
-  // marketId → coin symbol cache
-  let marketCoinMap = new Map<string, string>();
+  // marketId → { coin, quoteDecimals } cache
+  let marketCoinMap = new Map<string, { coin: string; quoteDecimals: number }>();
 
   const refreshMarkets = async () => {
     try {
       const markets = await api.fetchMarkets();
-      const map = new Map<string, string>();
+      const map = new Map<string, { coin: string; quoteDecimals: number }>();
       for (const m of markets) {
         const coin = m.ticker.split("/")[0]?.trim();
-        if (coin) map.set(m.marketId, coin);
+        if (coin) map.set(m.marketId, { coin, quoteDecimals: m.quoteToken?.decimals ?? 6 });
       }
       marketCoinMap = map;
     } catch (err) {
@@ -74,14 +74,17 @@ async function startHelixPrices(): Promise<() => void> {
       const orderbooks = await api.fetchOrderbooksV2(marketIds);
 
       for (const { marketId, orderbook } of orderbooks) {
-        const coin = marketCoinMap.get(marketId);
-        if (!coin) continue;
+        const market = marketCoinMap.get(marketId);
+        if (!market) continue;
+        const { coin, quoteDecimals } = market;
 
         const bestBid = orderbook.buys[0];
         const bestAsk = orderbook.sells[0];
         if (!bestBid || !bestAsk) continue;
 
-        const mid = (parseFloat(bestBid.price) + parseFloat(bestAsk.price)) / 2;
+        // Indexer returns raw chain prices scaled by 10^quoteDecimals
+        const priceScale = Math.pow(10, quoteDecimals);
+        const mid = (parseFloat(bestBid.price) + parseFloat(bestAsk.price)) / 2 / priceScale;
         if (mid > 0) {
           // Only set if Hyperliquid doesn't already have this coin
           // (HL data is more real-time via WebSocket)

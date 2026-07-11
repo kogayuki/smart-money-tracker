@@ -218,6 +218,12 @@ export async function startAutoTrader(bus: EventBus): Promise<void> {
       return;
     }
 
+    // 2b. Direction filter
+    if (!config.directions.includes(signal.direction)) {
+      console.log(`[auto-trader] skip ${signal.coin} — direction ${signal.direction} not in [${config.directions}]`);
+      return;
+    }
+
     // 3. Confidence check
     if (signal.confidence < config.minConfidence) {
       console.log(`[auto-trader] skip ${signal.coin} — confidence ${signal.confidence} < ${config.minConfidence}`);

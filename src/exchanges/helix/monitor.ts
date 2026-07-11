@@ -74,9 +74,12 @@ export async function startHelixMonitor(
 
           ws.tradeCount++;
           const marketMap = getMarketMap();
-          const coin = marketMap.get(trade.marketId) ?? trade.marketId;
+          const market = marketMap.get(trade.marketId);
+          const coin = market?.coin ?? trade.marketId;
 
-          const price = parseFloat(trade.executionPrice ?? "0");
+          // Indexer returns raw chain prices scaled by 10^quoteDecimals
+          const priceScale = Math.pow(10, market?.quoteDecimals ?? 6);
+          const price = parseFloat(trade.executionPrice ?? "0") / priceScale;
           const quantity = parseFloat(trade.executionQuantity ?? "0");
           const notional = price * quantity;
 
