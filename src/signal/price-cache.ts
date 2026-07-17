@@ -71,7 +71,16 @@ async function startHelixPrices(): Promise<() => void> {
       const marketIds = [...marketCoinMap.keys()];
       if (marketIds.length === 0) return;
 
-      const orderbooks = await api.fetchOrderbooksV2(marketIds);
+      // The indexer rejects requests with too many marketIds (>~100, URL
+      // length limit), so fetch in batches.
+      const BATCH_SIZE = 50;
+      const batches: string[][] = [];
+      for (let i = 0; i < marketIds.length; i += BATCH_SIZE) {
+        batches.push(marketIds.slice(i, i + BATCH_SIZE));
+      }
+      const orderbooks = (
+        await Promise.all(batches.map((ids) => api.fetchOrderbooksV2(ids)))
+      ).flat();
 
       for (const { marketId, orderbook } of orderbooks) {
         const market = marketCoinMap.get(marketId);
