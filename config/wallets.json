@@ -85,10 +85,10 @@
       "label": "Helix SM #1",
       "category": "smart-money",
       "source": "onchain-screen",
-      "active": true,
+      "active": false,
       "minNotionalUsd": 5000,
       "addedAt": "2026-05-13",
-      "notes": "Active daily trader. 3 positions across BTC/ETH/INJ PERP. Trades every ~30min. Verified 2026-05-16."
+      "notes": "Was active daily trader as of 2026-05-16, but no fills for ~62 days. Disabled 2026-07-18."
     },
     {
       "address": "inj1w587jqdxpygatpl8jt6j74g8hh36tw5vmecuek",
@@ -97,9 +97,9 @@
       "category": "smart-money",
       "source": "onchain-screen",
       "active": true,
-      "minNotionalUsd": 5000,
+      "minNotionalUsd": 1000,
       "addedAt": "2026-05-13",
-      "notes": "Most active Helix trader. 16 positions across 12+ markets (BTC/ETH/XRP/INJ/ZRO/BERA/TRUMP/etc). Verified 2026-05-16."
+      "notes": "Most active Helix trader. 16 positions across 12+ markets (BTC/ETH/XRP/INJ/ZRO/BERA/TRUMP/etc). Verified 2026-05-16. minNotional 5000→1000 on 2026-07-18: real fill dist (post price-descale fix) is p50 $3 / p90 $940 / p99 $13.5k, so $5k starved the signal patterns."
     },
     {
       "address": "inj12vpajtjf5cvmk2w737m0t8qwwkyjz0xgvxwyus",

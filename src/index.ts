@@ -10,6 +10,7 @@ import { startFillRecorder } from "./recorder/fill-recorder.js";
 import { startFillNotifier } from "./listeners/fill-notifier.js";
 import { startSignalDetector } from "./signal/detector.js";
 import { startSignalRecorder } from "./signal/signal-recorder.js";
+import { startSignalWatchdog } from "./signal/signal-watchdog.js";
 import { startSignalNotifier } from "./signal/signal-notifier.js";
 import { startPriceCache } from "./signal/price-cache.js";
 import { startOutcomeChecker } from "./signal/outcome-checker.js";
@@ -82,6 +83,7 @@ async function main(): Promise<void> {
   startSignalRecorder(bus);   // signal:detected → DB
   startSignalNotifier(bus);   // signal:detected → Discord
   startContextCollector(bus); // signal:detected → FR/OI/volume snapshot
+  const cleanupSignalWatchdog = startSignalWatchdog(bus); // 24h silence → Discord alert
 
   // ── Price cache (for outcome checking + future use) ──
   const cleanupPriceCache = await startPriceCache();
@@ -134,6 +136,7 @@ async function main(): Promise<void> {
     console.log(`[shutdown] received ${signal}`);
     clearInterval(heartbeat);
     cleanupDetector();
+    cleanupSignalWatchdog();
     cleanupOutcomeChecker?.();
     cleanupPaperChecker();
     cleanupAutoChecker();

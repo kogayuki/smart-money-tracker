@@ -8,7 +8,9 @@ import type { PatternMatcher, PatternMatch } from "./types.js";
  */
 
 const WINDOW_MS = 30 * 60 * 1000; // 30 minutes
-const THRESHOLD_USD = 500_000; // $500K net flow
+// Net-flow threshold. Default $500K assumes large HL whales; override via env
+// when the watched wallet set trades smaller clips (see FLOW_SHIFT_THRESHOLD_USD).
+const THRESHOLD_USD = Number(process.env.FLOW_SHIFT_THRESHOLD_USD ?? "500000");
 const COOLDOWN_MS = 30 * 60 * 1000; // 30 min between signals for same coin
 
 type FlowEntry = {
@@ -20,6 +22,10 @@ type FlowEntry = {
 
 export class FlowShiftPattern implements PatternMatcher {
   readonly name = "flow_shift";
+
+  constructor() {
+    console.log(`[flow-shift] threshold=$${THRESHOLD_USD} window=${WINDOW_MS / 60_000}min`);
+  }
 
   // coin → flow entries
   private windows = new Map<string, FlowEntry[]>();
