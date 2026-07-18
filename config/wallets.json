@@ -8,10 +8,10 @@
       "label": "SM Alpha #1",
       "category": "smart-money",
       "source": "hyperdash-leaderboard",
-      "active": true,
+      "active": false,
       "minNotionalUsd": 100000,
       "addedAt": "2026-05-06",
-      "notes": "30d PnL +$27M, AV ~$42M. Dexly leaderboard top. Active ETH position."
+      "notes": "30d PnL +$27M, AV ~$42M as of May. API check 2026-07-18: last fill 2026-04-29 (was already inactive when added). Disabled 2026-07-18."
     },
     {
       "address": "0x6c8512516ce5669d35113a11ca8b8de322fd84f6",
@@ -19,10 +19,10 @@
       "label": "SM Alpha #2",
       "category": "smart-money",
       "source": "hyperdash-leaderboard",
-      "active": true,
+      "active": false,
       "minNotionalUsd": 100000,
       "addedAt": "2026-05-06",
-      "notes": "30d PnL +$20M, AV ~$14M, volume $380M. High-frequency trader."
+      "notes": "30d PnL +$20M, AV ~$14M, volume $380M as of May. API check 2026-07-18: last fill 2026-06-03, no activity since. Disabled 2026-07-18."
     },
     {
       "address": "0xeadc152ac1014ace57c6b353f89adf5faffe9d55",
@@ -31,9 +31,9 @@
       "category": "whale",
       "source": "hyperdash-leaderboard",
       "active": true,
-      "minNotionalUsd": 50000,
+      "minNotionalUsd": 10000,
       "addedAt": "2026-05-06",
-      "notes": "30d PnL +$13M, AV ~$17M. 38 open positions across BTC/ETH/ATOM/AVAX/LTC etc. Very diversified."
+      "notes": "30d PnL +$13M, AV ~$17M. 38 open positions, very diversified. API check 2026-07-18: 675 fills/30d, p50 $104 / p90 $2k / max $180k, 28 fills >=$10k, last fill 2026-07-02. minNotional 50000→10000 on 2026-07-18."
     },
     {
       "address": "0xb83de012dba672c76a7dbbbf3e459cb59d7d6e36",
@@ -42,9 +42,9 @@
       "category": "smart-money",
       "source": "onchain-screen",
       "active": true,
-      "minNotionalUsd": 50000,
+      "minNotionalUsd": 2000,
       "addedAt": "2026-05-06",
-      "notes": "Institutional (Abraxas Capital). AV ~$5M, 10 positions. BTC/ETH/SOL hedge shorts. Reported by Lookonchain."
+      "notes": "Institutional (Abraxas Capital). BTC/ETH/SOL hedge shorts. API check 2026-07-18: TWAP execution — clips capped ~$5k (p50 $3k), but 30min net flow reaches $5M on BTC. minNotional 50000→2000 so flow_shift can aggregate the TWAP campaigns."
     },
     {
       "address": "0x5b5d51203a0f9079f8aeb098a6523a13f298c060",
@@ -53,9 +53,9 @@
       "category": "smart-money",
       "source": "onchain-screen",
       "active": true,
-      "minNotionalUsd": 50000,
+      "minNotionalUsd": 2000,
       "addedAt": "2026-05-06",
-      "notes": "Institutional (Abraxas Capital). AV ~$5M, 8 positions. BTC/ETH/SOL/SUI/XRP. Reported by Lookonchain."
+      "notes": "Institutional (Abraxas Capital). BTC/ETH/SOL/SUI/XRP. API check 2026-07-18: TWAP execution — clips ~$2k (p50 $2k), 30min net flow up to $2.2M BTC / $880k ETH. minNotional 50000→2000 for flow_shift aggregation."
     },
     {
       "address": "0x31ca8395cf837de08b24da3f660e77761dfb974b",

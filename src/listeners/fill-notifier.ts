@@ -1,8 +1,14 @@
 import type { EventBus, SmFillEvent } from "../events/bus.js";
 import { notifyDiscord, buildFillEmbed } from "../notify.js";
 
+// Per-fill Discord notifications only above this notional. Monitors now emit
+// small TWAP clips (down to ~$1-2k) for signal aggregation — notifying each
+// one would flood the channel with thousands of messages per day.
+const FILL_NOTIFY_MIN_USD = Number(process.env.FILL_NOTIFY_MIN_USD ?? "10000");
+
 export function startFillNotifier(bus: EventBus): void {
   bus.on("sm:fill", (fill: SmFillEvent) => {
+    if (fill.notionalUsd < FILL_NOTIFY_MIN_USD) return;
     const wallet = {
       address: fill.walletAddress,
       exchange: fill.exchange,
@@ -20,5 +26,5 @@ export function startFillNotifier(bus: EventBus): void {
     });
   });
 
-  console.log("[fill-notifier] listening for sm:fill events");
+  console.log(`[fill-notifier] listening for sm:fill events (notify >= $${FILL_NOTIFY_MIN_USD})`);
 }
