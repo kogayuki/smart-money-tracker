@@ -19,7 +19,7 @@
     "@injectivelabs/networks": "^1.19.6",
     "@injectivelabs/sdk-ts": "^1.19.6",
     "@neondatabase/serverless": "^0.10.4",
-    "@nktkas/hyperliquid": "^0.32.2",
+    "@nktkas/hyperliquid": "^0.33.2",
     "undici": "^7.2.0"
   },
   "devDependencies": {
