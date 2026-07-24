@@ -11,6 +11,7 @@ import { startFillNotifier } from "./listeners/fill-notifier.js";
 import { startSignalDetector } from "./signal/detector.js";
 import { startSignalRecorder } from "./signal/signal-recorder.js";
 import { startSignalWatchdog } from "./signal/signal-watchdog.js";
+import { startGrvtGeoProbe } from "./listeners/grvt-geo-probe.js";
 import { startSignalNotifier } from "./signal/signal-notifier.js";
 import { startPriceCache } from "./signal/price-cache.js";
 import { startOutcomeChecker } from "./signal/outcome-checker.js";
@@ -84,6 +85,7 @@ async function main(): Promise<void> {
   startSignalNotifier(bus);   // signal:detected → Discord
   startContextCollector(bus); // signal:detected → FR/OI/volume snapshot
   const cleanupSignalWatchdog = startSignalWatchdog(bus); // 24h silence → Discord alert
+  const cleanupGrvtGeoProbe = startGrvtGeoProbe(); // hourly GRVT access check → Discord on recovery
 
   // ── Price cache (for outcome checking + future use) ──
   const cleanupPriceCache = await startPriceCache();
@@ -137,6 +139,7 @@ async function main(): Promise<void> {
     clearInterval(heartbeat);
     cleanupDetector();
     cleanupSignalWatchdog();
+    cleanupGrvtGeoProbe();
     cleanupOutcomeChecker?.();
     cleanupPaperChecker();
     cleanupAutoChecker();
