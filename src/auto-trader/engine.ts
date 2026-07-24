@@ -264,14 +264,18 @@ async function startAutoTraderInstance(bus: EventBus, config: AutoTraderConfig):
     // 7. Execute
     console.log(`[auto-trader] executing ${signal.coin} ${signal.direction} on ${config.exchange} (conf=${signal.confidence})`);
 
+    // Reserve the slot synchronously BEFORE the async order executes, so a
+    // second signal for the same coin arriving mid-flight is rejected by the
+    // duplicate check above (2026-07-23: two ETH signals 700ms apart both
+    // opened, orphaning half the position from the checker).
+    openPositions.add(signal.coin);
+
     const executeTrade = config.exchange === "grvt"
       ? import("./grvt-executor.js").then(m => m.executeGrvtTrade(config, signal))
       : executeHyperliquidTrade(config, signal);
 
     executeTrade
       .then((result) => {
-        openPositions.add(signal.coin);
-
         // Track for TP/SL/timeout checker
         trackPosition(
           config.exchange,
@@ -307,6 +311,7 @@ async function startAutoTraderInstance(bus: EventBus, config: AutoTraderConfig):
         );
       })
       .catch((err) => {
+        openPositions.delete(signal.coin); // release reserved slot on failure
         const errorMsg = err instanceof Error ? err.message : String(err);
         console.error(`[auto-trader] FAILED ${config.exchange} ${signal.coin} ${signal.direction}:`, errorMsg);
         bus.emit("auto-trade:error", {
