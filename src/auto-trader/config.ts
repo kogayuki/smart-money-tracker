@@ -30,6 +30,15 @@ export type AutoTraderConfig = {
   slPct: number;
   /** Maximum hold time in hours */
   maxHoldH: number;
+  /**
+   * Regime filter threshold in percent (0 = disabled).
+   * Skips new shorts when 24h price change >= +pct, and new longs when <= -pct.
+   */
+  regimeFilterPct: number;
+  /** Per-coin signal type override, e.g. "ETH:confluence;HYPE:confluence+flow_shift" */
+  coinSignalTypes: Record<string, string[]>;
+  /** Per-coin notional size override in USD, e.g. "HYPE:40" */
+  coinSizeUsd: Record<string, number>;
   /** Fee recipient (Injective only: inj1... address) */
   feeRecipient: string;
   /** Builder fee address (Hyperliquid only: 0x... address) */
@@ -64,6 +73,31 @@ function env(exchange: AutoTraderExchange, key: string): string | undefined {
   );
 }
 
+/** Parses "ETH:confluence;HYPE:confluence+flow_shift" into { ETH: [...], HYPE: [...] } */
+function parseCoinSignalTypes(raw: string | undefined): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  if (!raw) return out;
+  for (const entry of raw.split(";")) {
+    const [coin, types] = entry.split(":");
+    if (!coin?.trim() || !types?.trim()) continue;
+    out[coin.trim().toUpperCase()] = types.split("+").map((s) => s.trim()).filter(Boolean);
+  }
+  return out;
+}
+
+/** Parses "HYPE:40;ETH:93" into { HYPE: 40, ETH: 93 } */
+function parseCoinSizeUsd(raw: string | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw) return out;
+  for (const entry of raw.split(";")) {
+    const [coin, size] = entry.split(":");
+    const n = Number(size);
+    if (!coin?.trim() || !Number.isFinite(n) || n <= 0) continue;
+    out[coin.trim().toUpperCase()] = n;
+  }
+  return out;
+}
+
 function buildConfig(exchange: AutoTraderExchange): AutoTraderConfig {
   const network = env(exchange, "NETWORK") ?? "mainnet";
   if (network !== "testnet" && network !== "mainnet") {
@@ -86,6 +120,9 @@ function buildConfig(exchange: AutoTraderExchange): AutoTraderConfig {
     tpPct: Number(env(exchange, "TP_PCT") ?? "5"),
     slPct: Number(env(exchange, "SL_PCT") ?? "3"),
     maxHoldH: Number(env(exchange, "MAX_HOLD_H") ?? "24"),
+    regimeFilterPct: Number(env(exchange, "REGIME_FILTER_PCT") ?? "0"),
+    coinSignalTypes: parseCoinSignalTypes(env(exchange, "COIN_SIGNAL_TYPES")),
+    coinSizeUsd: parseCoinSizeUsd(env(exchange, "COIN_SIZE_USD")),
     feeRecipient: process.env.AUTO_TRADER_FEE_RECIPIENT ?? "",
     builderAddress: process.env.AUTO_TRADER_BUILDER_ADDRESS ?? "",
     builderFee: Number(process.env.AUTO_TRADER_BUILDER_FEE ?? "0"),

@@ -9,13 +9,16 @@
  */
 import { HttpTransport } from "@nktkas/hyperliquid";
 import { order } from "@nktkas/hyperliquid/api/exchange";
-import { allMids, meta } from "@nktkas/hyperliquid/api/info";
+import { allMids, meta, metaAndAssetCtxs } from "@nktkas/hyperliquid/api/info";
 import { privateKeyToAccount } from "viem/accounts";
 import type { EventBus, SignalDetectedEvent, AutoTradeOpenEvent } from "../events/bus.js";
 import { loadAutoTraderConfigs, type AutoTraderConfig } from "./config.js";
 import { trackPosition } from "./checker.js";
 
 const COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+/** Thrown by the regime check to skip an entry without recording an error. */
+class RegimeSkip extends Error {}
 
 type AssetInfo = { index: number; szDecimals: number };
 let assetMap: Map<string, AssetInfo> | null = null;
@@ -31,6 +34,32 @@ async function loadAssetMap(transport: HttpTransport): Promise<Map<string, Asset
     if (asset) assetMap.set(asset.name.toUpperCase(), { index: i, szDecimals: asset.szDecimals });
   }
   return assetMap;
+}
+
+// ── Regime filter: 24h price change via HL asset contexts (60s cache) ──
+
+let regimeCache: { at: number; changes: Map<string, number> } | null = null;
+
+/** Returns 24h price change in percent (e.g. +2.5), or null if unavailable. */
+async function get24hChangePct(coin: string): Promise<number | null> {
+  const now = Date.now();
+  if (!regimeCache || now - regimeCache.at > 60_000) {
+    const transport = new HttpTransport();
+    const [info, ctxs] = await metaAndAssetCtxs({ transport });
+    const changes = new Map<string, number>();
+    for (let i = 0; i < info.universe.length; i++) {
+      const asset = info.universe[i];
+      const ctx = ctxs[i];
+      if (!asset || !ctx) continue;
+      const prev = Number(ctx.prevDayPx);
+      const mark = Number(ctx.markPx);
+      if (prev > 0 && mark > 0) {
+        changes.set(asset.name.toUpperCase(), ((mark - prev) / prev) * 100);
+      }
+    }
+    regimeCache = { at: now, changes };
+  }
+  return regimeCache.changes.get(coin.toUpperCase()) ?? null;
 }
 
 function roundToSigFigs(num: number, sigFigs: number): string {
@@ -221,9 +250,10 @@ async function startAutoTraderInstance(bus: EventBus, config: AutoTraderConfig):
     // 1. Coin filter
     if (!config.coins.includes(signal.coin.toUpperCase())) return;
 
-    // 2. Signal type filter
-    if (!config.signalTypes.includes(signal.type)) {
-      console.log(`[auto-trader] skip ${tag} — type ${signal.type} not in [${config.signalTypes}]`);
+    // 2. Signal type filter (per-coin override → global)
+    const allowedTypes = config.coinSignalTypes[signal.coin.toUpperCase()] ?? config.signalTypes;
+    if (!allowedTypes.includes(signal.type)) {
+      console.log(`[auto-trader] skip ${tag} — type ${signal.type} not in [${allowedTypes}]`);
       return;
     }
 
@@ -270,11 +300,37 @@ async function startAutoTraderInstance(bus: EventBus, config: AutoTraderConfig):
     // opened, orphaning half the position from the checker).
     openPositions.add(signal.coin);
 
-    const executeTrade = config.exchange === "grvt"
-      ? import("./grvt-executor.js").then(m => m.executeGrvtTrade(config, signal))
-      : executeHyperliquidTrade(config, signal);
+    // Per-coin size override (e.g. small-size trial coins)
+    const effectiveConfig: AutoTraderConfig = {
+      ...config,
+      positionSizeUsd: config.coinSizeUsd[signal.coin.toUpperCase()] ?? config.positionSizeUsd,
+    };
 
-    executeTrade
+    // 8. Regime filter: skip counter-trend entries in a strong 24h move
+    const regimeCheck = (async () => {
+      if (config.regimeFilterPct <= 0) return;
+      let change: number | null = null;
+      try {
+        change = await get24hChangePct(signal.coin);
+      } catch (e) {
+        console.warn(`[auto-trader] regime check failed for ${tag} (proceeding):`, e instanceof Error ? e.message : e);
+        return;
+      }
+      if (change === null) return;
+      if (
+        (signal.direction === "short" && change >= config.regimeFilterPct) ||
+        (signal.direction === "long" && change <= -config.regimeFilterPct)
+      ) {
+        throw new RegimeSkip(`24h change ${change.toFixed(2)}% blocks new ${signal.direction} (threshold ±${config.regimeFilterPct}%)`);
+      }
+    })();
+
+    regimeCheck
+      .then(() =>
+        config.exchange === "grvt"
+          ? import("./grvt-executor.js").then(m => m.executeGrvtTrade(effectiveConfig, signal))
+          : executeHyperliquidTrade(effectiveConfig, signal),
+      )
       .then((result) => {
         // Track for TP/SL/timeout checker
         trackPosition(
@@ -297,7 +353,7 @@ async function startAutoTraderInstance(bus: EventBus, config: AutoTraderConfig):
           txHash: result.txHash,
           executionPrice: result.executionPrice,
           quantity: result.quantity,
-          margin: (config.positionSizeUsd / config.leverage).toFixed(2),
+          margin: (effectiveConfig.positionSizeUsd / config.leverage).toFixed(2),
           leverage: config.leverage,
           feeRecipient: config.builderAddress || "self",
           signalType: signal.type,
@@ -311,7 +367,11 @@ async function startAutoTraderInstance(bus: EventBus, config: AutoTraderConfig):
         );
       })
       .catch((err) => {
-        openPositions.delete(signal.coin); // release reserved slot on failure
+        openPositions.delete(signal.coin); // release reserved slot on failure/skip
+        if (err instanceof RegimeSkip) {
+          console.log(`[auto-trader] skip ${tag} — regime filter: ${err.message}`);
+          return;
+        }
         const errorMsg = err instanceof Error ? err.message : String(err);
         console.error(`[auto-trader] FAILED ${config.exchange} ${signal.coin} ${signal.direction}:`, errorMsg);
         bus.emit("auto-trade:error", {
