@@ -29,6 +29,7 @@ import { startAutoTradeChecker } from "./auto-trader/checker.js";
 import { startAutoTradeNotifier } from "./auto-trader/notifier.js";
 import { startAutoTradeRecorder } from "./auto-trader/recorder.js";
 import { startContextCollector } from "./signal/context-collector.js";
+import { startFundingMonitor } from "./funding-monitor.js";
 
 const NODE_ENV = process.env.NODE_ENV ?? "development";
 const PORT = Number(process.env.PORT ?? 3000);
@@ -90,6 +91,9 @@ async function main(): Promise<void> {
   // ── Price cache (for outcome checking + future use) ──
   const cleanupPriceCache = await startPriceCache();
 
+  // ── Funding monitor (observation only, hourly snapshots + spread alerts) ──
+  const cleanupFundingMonitor = startFundingMonitor();
+
   // ── Polymarket poller ──
   const poller = new PolymarketPoller();
   await poller.start();
@@ -140,6 +144,7 @@ async function main(): Promise<void> {
     cleanupDetector();
     cleanupSignalWatchdog();
     cleanupGrvtGeoProbe();
+    cleanupFundingMonitor();
     cleanupOutcomeChecker?.();
     cleanupPaperChecker();
     cleanupAutoChecker();
