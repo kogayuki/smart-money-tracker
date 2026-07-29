@@ -39,6 +39,10 @@ export type AutoTraderConfig = {
   coinSignalTypes: Record<string, string[]>;
   /** Per-coin notional size override in USD, e.g. "HYPE:40" */
   coinSizeUsd: Record<string, number>;
+  /** Signal-coin aliases applied before all filters, e.g. "@107:HYPE" (spot pair → perp) */
+  coinAliases: Record<string, string>;
+  /** Coins whose LONG signals are inverted into SHORT entries (fade strategy) */
+  fadeCoins: string[];
   /** Fee recipient (Injective only: inj1... address) */
   feeRecipient: string;
   /** Builder fee address (Hyperliquid only: 0x... address) */
@@ -98,6 +102,18 @@ function parseCoinSizeUsd(raw: string | undefined): Record<string, number> {
   return out;
 }
 
+/** Parses "@107:HYPE;FOO:BAR" into { "@107": "HYPE", FOO: "BAR" } */
+function parseCoinAliases(raw: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw) return out;
+  for (const entry of raw.split(";")) {
+    const [from, to] = entry.split(":");
+    if (!from?.trim() || !to?.trim()) continue;
+    out[from.trim().toUpperCase()] = to.trim().toUpperCase();
+  }
+  return out;
+}
+
 function buildConfig(exchange: AutoTraderExchange): AutoTraderConfig {
   const network = env(exchange, "NETWORK") ?? "mainnet";
   if (network !== "testnet" && network !== "mainnet") {
@@ -123,6 +139,9 @@ function buildConfig(exchange: AutoTraderExchange): AutoTraderConfig {
     regimeFilterPct: Number(env(exchange, "REGIME_FILTER_PCT") ?? "0"),
     coinSignalTypes: parseCoinSignalTypes(env(exchange, "COIN_SIGNAL_TYPES")),
     coinSizeUsd: parseCoinSizeUsd(env(exchange, "COIN_SIZE_USD")),
+    coinAliases: parseCoinAliases(env(exchange, "COIN_ALIASES")),
+    fadeCoins: (env(exchange, "FADE_COINS") ?? "")
+      .split(",").map((s) => s.trim().toUpperCase()).filter(Boolean),
     feeRecipient: process.env.AUTO_TRADER_FEE_RECIPIENT ?? "",
     builderAddress: process.env.AUTO_TRADER_BUILDER_ADDRESS ?? "",
     builderFee: Number(process.env.AUTO_TRADER_BUILDER_FEE ?? "0"),

@@ -244,11 +244,28 @@ async function startAutoTraderInstance(bus: EventBus, config: AutoTraderConfig):
     }
   });
 
-  bus.on("signal:detected", (signal) => {
+  bus.on("signal:detected", (rawSignal) => {
+    // 0. Alias (e.g. @107 spot pair → HYPE perp) + fade (invert long → short
+    // for coins where SM long flow is a contrarian indicator)
+    const aliasedCoin = config.coinAliases[rawSignal.coin.toUpperCase()] ?? rawSignal.coin;
+    const isFaded =
+      rawSignal.direction === "long" && config.fadeCoins.includes(aliasedCoin.toUpperCase());
+    const signal: SignalDetectedEvent = {
+      ...rawSignal,
+      coin: aliasedCoin,
+      direction: isFaded ? "short" : rawSignal.direction,
+    };
+
     const tag = `${config.exchange}:${signal.coin}`;
 
     // 1. Coin filter
     if (!config.coins.includes(signal.coin.toUpperCase())) return;
+
+    if (isFaded) {
+      console.log(
+        `[auto-trader] fade ${tag} — inverting ${rawSignal.coin} long → ${signal.coin} short (${signal.type} conf=${signal.confidence})`,
+      );
+    }
 
     // 2. Signal type filter (per-coin override → global)
     const allowedTypes = config.coinSignalTypes[signal.coin.toUpperCase()] ?? config.signalTypes;
