@@ -13,12 +13,17 @@ let lastBlocked: boolean | null = null;
 
 async function probe(): Promise<void> {
   try {
-    // Deliberately invalid key: a blocked IP returns "Access from this
-    // location is not allowed.", an allowed IP returns "api_key not found".
+    // Must probe with a VALID key: GRVT validates the key BEFORE the geo
+    // check, so an invalid key returns "api_key not found" even from a
+    // blocked IP (this caused a false "unblocked" alert on 2026-07-27).
+    // With a valid key, a blocked IP returns "Access from this location is
+    // not allowed." while an allowed IP returns 200 + gravity cookie.
+    const apiKey = process.env.AUTO_TRADER_GRVT_API_KEY;
+    if (!apiKey) return;
     const res = await fetch(LOGIN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: "geo-probe" }),
+      body: JSON.stringify({ api_key: apiKey }),
     });
     const body = await res.text();
     const blocked = body.includes("not allowed");
