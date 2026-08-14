@@ -43,6 +43,12 @@ export type AutoTraderConfig = {
   coinAliases: Record<string, string>;
   /** Coins whose LONG signals are inverted into SHORT entries (fade strategy) */
   fadeCoins: string[];
+  /**
+   * Wallet-label allowlist (lowercase substrings). Empty = act on all wallets.
+   * Signals whose walletLabels don't match any entry are recorded/tracked but
+   * NOT traded — used to forward-validate newly added wallets without live risk.
+   */
+  walletAllowlist: string[];
   /** Fee recipient (Injective only: inj1... address) */
   feeRecipient: string;
   /** Builder fee address (Hyperliquid only: 0x... address) */
@@ -142,6 +148,8 @@ function buildConfig(exchange: AutoTraderExchange): AutoTraderConfig {
     coinAliases: parseCoinAliases(env(exchange, "COIN_ALIASES")),
     fadeCoins: (env(exchange, "FADE_COINS") ?? "")
       .split(",").map((s) => s.trim().toUpperCase()).filter(Boolean),
+    walletAllowlist: (env(exchange, "WALLET_ALLOWLIST") ?? "")
+      .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
     feeRecipient: process.env.AUTO_TRADER_FEE_RECIPIENT ?? "",
     builderAddress: process.env.AUTO_TRADER_BUILDER_ADDRESS ?? "",
     builderFee: Number(process.env.AUTO_TRADER_BUILDER_FEE ?? "0"),

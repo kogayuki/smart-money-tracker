@@ -111,6 +111,28 @@
       "minNotionalUsd": 5000,
       "addedAt": "2026-05-13",
       "notes": "Last trade 2023-10. Zero positions. Disabled 2026-05-16."
+    },
+    {
+      "address": "0x72774e2fe1992d5da8c6e9cef73fd2ab980c0b98",
+      "exchange": "hyperliquid",
+      "label": "SM Screen #1",
+      "category": "smart-money",
+      "source": "leaderboard-rescreen-2026-08-14",
+      "active": true,
+      "minNotionalUsd": 500,
+      "addedAt": "2026-08-14",
+      "notes": "Rescreen 8/14: 30d flow-eval n=132 events, win 55%, avg +1.08%/4h (long +1.35% n=67, short +0.81% n=65). xyz stocks + HYPE. AV $4.4M, mROI 91%, mVlm $165M. TWAP clips p50 $766 / p90 $8.7k. NOT in AUTO_TRADER_WALLET_ALLOWLIST yet — forward validation first."
+    },
+    {
+      "address": "0xfe7ce058edc7cfcde9ef8262ba51f8d4796ab7ae",
+      "exchange": "hyperliquid",
+      "label": "SM Screen #2",
+      "category": "smart-money",
+      "source": "leaderboard-rescreen-2026-08-14",
+      "active": true,
+      "minNotionalUsd": 500,
+      "addedAt": "2026-08-14",
+      "notes": "Rescreen 8/14: 30d flow-eval n=35, win 66%, avg +1.17%/4h — SHORT specialist (78% / +2.45% n=18); longs -EV. xyz stocks / ETH. AV $13.5M, mPnl $2.7M. TWAP clips p50 $915 / p90 $7.2k. NOT in allowlist yet — forward validation first."
     }
   ]
 }

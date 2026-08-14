@@ -280,6 +280,16 @@ async function startAutoTraderInstance(bus: EventBus, config: AutoTraderConfig):
       return;
     }
 
+    // 2c. Wallet allowlist (empty = all). Non-matching signals are still
+    // recorded + outcome-tracked, just not traded (forward validation).
+    if (config.walletAllowlist.length > 0) {
+      const labels = signal.walletLabels.map((l) => l.toLowerCase());
+      if (!config.walletAllowlist.some((a) => labels.some((l) => l.includes(a)))) {
+        console.log(`[auto-trader] skip ${tag} — wallets [${signal.walletLabels.join(",")}] not in allowlist`);
+        return;
+      }
+    }
+
     // 3. Confidence check
     if (signal.confidence < config.minConfidence) {
       console.log(`[auto-trader] skip ${tag} — confidence ${signal.confidence} < ${config.minConfidence}`);
