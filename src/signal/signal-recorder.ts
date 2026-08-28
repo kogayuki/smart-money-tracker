@@ -1,5 +1,6 @@
 import type { EventBus, SignalDetectedEvent } from "../events/bus.js";
 import { getDb } from "../db/client.js";
+import { registerXStocksCoin } from "./price-cache.js";
 
 export function startSignalRecorder(bus: EventBus): void {
   const sql = getDb();
@@ -9,6 +10,10 @@ export function startSignalRecorder(bus: EventBus): void {
   }
 
   bus.on("signal:detected", (signal: SignalDetectedEvent) => {
+    // Ensure xStocks coins get price tracking for outcome checks
+    if (signal.coin.includes(":")) {
+      registerXStocksCoin(signal.coin);
+    }
     sql`
       INSERT INTO signals (
         id, type, coin, direction, confidence,

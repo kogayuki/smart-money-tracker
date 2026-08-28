@@ -128,15 +128,89 @@ async function startHelixPrices(): Promise<() => void> {
   };
 }
 
+// ── xStocks l2Book polling (not in allMids) ──
+
+const XSTOCKS_POLL_INTERVAL_MS = 60_000; // 60 seconds
+const xStocksCoins = new Set<string>();
+
+/** Register a coin for xStocks price polling (call when signals arrive). */
+export function registerXStocksCoin(coin: string): void {
+  if (coin.includes(":") && !xStocksCoins.has(coin)) {
+    xStocksCoins.add(coin);
+    console.log(`[price-cache] registered xStocks coin: ${coin}`);
+  }
+}
+
+async function fetchXStocksPrices(): Promise<void> {
+  if (xStocksCoins.size === 0) return;
+
+  const coins = [...xStocksCoins];
+  const results = await Promise.allSettled(
+    coins.map(async (coin) => {
+      const resp = await fetch("https://api.hyperliquid.xyz/info", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "l2Book", coin, nSigFigs: 5 }),
+      });
+      const data = (await resp.json()) as {
+        levels?: [Array<{ px: string }>, Array<{ px: string }>];
+      };
+      const bid = data.levels?.[0]?.[0]?.px;
+      const ask = data.levels?.[1]?.[0]?.px;
+      if (bid && ask) {
+        const mid = (parseFloat(bid) + parseFloat(ask)) / 2;
+        if (mid > 0) prices.set(coin, mid);
+      }
+    }),
+  );
+
+  const ok = results.filter((r) => r.status === "fulfilled").length;
+  if (ok > 0) {
+    console.log(`[price-cache] xStocks prices updated (${ok}/${coins.length})`);
+  }
+}
+
+function startXStocksPrices(): () => void {
+  // Seed from DB: find coins with ":" prefix in recent signals
+  void seedXStocksFromDb();
+  void fetchXStocksPrices();
+  const interval = setInterval(() => void fetchXStocksPrices(), XSTOCKS_POLL_INTERVAL_MS);
+  console.log("[price-cache] xStocks price polling started (60s interval)");
+  return () => clearInterval(interval);
+}
+
+async function seedXStocksFromDb(): Promise<void> {
+  try {
+    const { getDb } = await import("../db/client.js");
+    const sql = getDb();
+    if (!sql) return;
+    const rows = await sql`
+      SELECT DISTINCT coin FROM signals
+      WHERE coin LIKE '%:%'
+        AND detected_at >= now() - interval '30 days'
+    `;
+    for (const row of rows) {
+      xStocksCoins.add(row.coin as string);
+    }
+    if (rows.length > 0) {
+      console.log(`[price-cache] seeded ${rows.length} xStocks coins from DB`);
+    }
+  } catch {
+    // Non-critical — coins will be registered as signals arrive
+  }
+}
+
 // ── Combined price cache ──
 
 export async function startPriceCache(): Promise<() => Promise<void>> {
   const cleanupHl = await startHyperliquidPrices();
   const cleanupHelix = await startHelixPrices();
+  const cleanupXStocks = startXStocksPrices();
 
   console.log("[price-cache] all price sources active");
 
   return async () => {
+    cleanupXStocks();
     cleanupHelix();
     await cleanupHl();
     console.log("[price-cache] stopped");
